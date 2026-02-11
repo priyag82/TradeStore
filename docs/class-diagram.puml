@@ -1,0 +1,214 @@
+@startuml Trade Store Service Class Diagram
+
+title Trade Store Service - Domain Model
+
+package com.tradestore.entity {
+    class Trade {
+        - UUID tradeId
+        - Integer version
+        - String counterPartyId
+        - String bookId
+        - LocalDate maturityDate
+        - LocalDate createdDate
+        - String expired
+        - LocalDate timestamp
+        - LocalDate lastUpdated
+        --
+        + Trade()
+        + Trade(tradeId, version, counterPartyId, bookId, maturityDate, createdDate, expired)
+        + getTradeId(): UUID
+        + setTradeId(tradeId): void
+        + getVersion(): Integer
+        + setVersion(version): void
+        + getCounterPartyId(): String
+        + setCounterPartyId(counterPartyId): void
+        + getBookId(): String
+        + setBookId(bookId): void
+        + getMaturityDate(): LocalDate
+        + setMaturityDate(maturityDate): void
+        + getCreatedDate(): LocalDate
+        + setCreatedDate(createdDate): void
+        + getExpired(): String
+        + setExpired(expired): void
+        + toString(): String
+    }
+    
+    class AuditMessage {
+        - String id
+        - String messageId
+        - String topic
+        - Integer partition
+        - Long offset
+        - String messageContent
+        - LocalDateTime receivedAt
+        - LocalDateTime processedAt
+        - String status
+        - String errorMessage
+        --
+        + AuditMessage()
+        + AuditMessage(messageId, topic, partition, offset, messageContent, receivedAt)
+        + getId(): String
+        + setId(id): void
+        + getMessageId(): String
+        + setMessageId(messageId): void
+        + getTopic(): String
+        + setTopic(topic): void
+        + getPartition(): Integer
+        + setPartition(partition): void
+        + getOffset(): Long
+        + setOffset(offset): void
+        + getMessageContent(): String
+        + setMessageContent(messageContent): void
+        + getReceivedAt(): LocalDateTime
+        + setReceivedAt(receivedAt): void
+        + getProcessedAt(): LocalDateTime
+        + setProcessedAt(processedAt): void
+        + getStatus(): String
+        + setStatus(status): void
+        + getErrorMessage(): String
+        + setErrorMessage(errorMessage): void
+        + toString(): String
+    }
+}
+
+package com.tradestore.dto {
+    class TradeMessage {
+        - UUID tradeId
+        - Integer version
+        - String counterPartyId
+        - String bookId
+        - LocalDate maturityDate
+        - LocalDate createdDate
+        - String expired
+        --
+        + TradeMessage()
+        + getTradeId(): UUID
+        + setTradeId(tradeId): void
+        + getVersion(): Integer
+        + setVersion(version): void
+        + getCounterPartyId(): String
+        + setCounterPartyId(counterPartyId): void
+        + getBookId(): String
+        + setBookId(bookId): void
+        + getMaturityDate(): LocalDate
+        + setMaturityDate(maturityDate): void
+        + getCreatedDate(): LocalDate
+        + setCreatedDate(createdDate): void
+        + getExpired(): String
+        + setExpired(expired): void
+        + toString(): String
+    }
+}
+
+package com.tradestore.repository {
+    interface TradeRepository {
+        <<Repository>>
+        + findById(tradeId): Optional<Trade>
+        + save(trade): Trade
+        + findAll(): List<Trade>
+        + findByMaturityDateBeforeAndExpired(currentDate, expiredFlag): List<Trade>
+        + existsByTradeId(tradeId): boolean
+    }
+    
+    interface AuditMessageRepository {
+        <<Repository>>
+        + findById(id): Optional<AuditMessage>
+        + save(auditMessage): AuditMessage
+        + findAll(): List<AuditMessage>
+    }
+}
+
+package com.tradestore.service {
+    class TradeService {
+        - TradeRepository tradeRepository
+        - Logger logger
+        --
+        + processTrade(trade): Trade
+        + markExpiredTrades(): void
+        + getTrade(tradeId): Optional<Trade>
+        + getAllTrades(): List<Trade>
+        --
+        - validateMaturityDate(trade): void
+        - validateVersion(trade): void
+    }
+    
+    class KafkaTradeConsumer {
+        - TradeService tradeService
+        - AuditMessageRepository auditMessageRepository
+        - ObjectMapper objectMapper
+        --
+        + consumeTradeMessage(message, topic, partition, offset, messageKey, consumerRecord, acknowledgment): void
+        --
+        - createAuditMessage(message, topic, partition, offset): AuditMessage
+        - convertToTrade(tradeMessage): Trade
+    }
+}
+
+package com.tradestore.exception {
+    class InvalidTradeException {
+        + InvalidTradeException(message)
+        + InvalidTradeException(message, cause)
+    }
+}
+
+package com.tradestore.config {
+    class DatabaseConfig {
+        <<Configuration>>
+    }
+    
+    class KafkaConfig {
+        <<Configuration>>
+        - String bootstrapServers
+        - String groupId
+        --
+        + consumerFactory(): ConsumerFactory
+        + kafkaListenerContainerFactory(): ConcurrentKafkaListenerContainerFactory
+    }
+}
+
+' Relationships
+TradeMessage ..> Trade : "JSON mapping"
+TradeService --> TradeRepository : "uses"
+TradeService --> Trade : "processes"
+KafkaTradeConsumer --> TradeService : "delegates to"
+KafkaTradeConsumer --> AuditMessageRepository : "uses"
+KafkaTradeConsumer --> TradeMessage : "consumes"
+KafkaTradeConsumer --> AuditMessage : "creates"
+TradeRepository --> Trade : "manages"
+AuditMessageRepository --> AuditMessage : "manages"
+TradeService --> InvalidTradeException : "throws"
+
+' JPA Annotations
+note top of Trade
+  @Entity
+  @Table(name = "trades")
+  @EntityListeners(AuditingEntityListener.class)
+end note
+
+note top of AuditMessage
+  @Document(collection = "audit_messages")
+end note
+
+' Spring Annotations
+note top of TradeRepository
+  @Repository
+  extends JpaRepository<Trade, UUID>
+end note
+
+note top of AuditMessageRepository
+  @Repository
+  extends MongoRepository<AuditMessage, String>
+end note
+
+note top of TradeService
+  @Service
+  @Transactional
+  @Scheduled(cron = "0 0 0 * * *")
+end note
+
+note top of KafkaTradeConsumer
+  @Service
+  @KafkaListener(topics = "tradestore")
+end note
+
+@enduml

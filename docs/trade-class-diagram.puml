@@ -1,0 +1,174 @@
+@startuml Trade System Class Diagram
+
+title Trade System Class Diagram
+
+package com.tradestore.entity {
+    class Trade {
+        - UUID tradeId
+        - Integer version
+        - String counterPartyId
+        - String bookId
+        - LocalDate maturityDate
+        - LocalDate createdDate
+        - String expired
+        - LocalDate timestamp
+        - LocalDate lastUpdated
+        --
+        + getters()
+        + setters()
+        + toString()
+    }
+    
+    class AuditMessage {
+        - String id
+        - String messageId
+        - String topic
+        - Integer partition
+        - Long offset
+        - String messageContent
+        - LocalDateTime receivedAt
+        - LocalDateTime processedAt
+        - String status
+        - String errorMessage
+        --
+        + getters()
+        + setters()
+        + toString()
+    }
+}
+
+package com.tradestore.dto {
+    class TradeMessage {
+        - UUID tradeId
+        - Integer version
+        - String counterPartyId
+        - String bookId
+        - LocalDate maturityDate
+        - LocalDate createdDate
+        - String expired
+        --
+        + getters()
+        + setters()
+        + toString()
+    }
+}
+
+package com.tradestore.service {
+    class TradeService {
+        - TradeRepository tradeRepository
+        - AuditMessageRepository auditMessageRepository
+        --
+        + processTrade(Trade trade)
+        + validateTrade(Trade trade)
+        + saveTrade(Trade trade)
+    }
+    
+    class KafkaTradeConsumer {
+        - TradeService tradeService
+        - AuditMessageRepository auditMessageRepository
+        - ObjectMapper objectMapper
+        --
+        + consumeTradeMessage(message, headers, acknowledgment)
+        - createAuditMessage(message, topic, partition, offset)
+        - convertToTrade(TradeMessage tradeMessage)
+    }
+    
+    class TradeExpiryScheduler {
+        - TradeRepository tradeRepository
+        --
+        + expireTradesAtMidnight()
+        + expireTradesEveryMinute()
+        + expireMaturedTrades()
+    }
+}
+
+package com.tradestore.repository {
+    interface TradeRepository {
+        + <T> findById(ID id)
+        + <S> save(S entity)
+        + List<Trade> findByMaturityDateBeforeAndExpired(LocalDate date, String expired)
+        + boolean existsByTradeId(UUID tradeId)
+    }
+    
+    interface AuditMessageRepository {
+        + <S> save(S entity)
+        + List<AuditMessage> findByStatus(String status)
+        + Optional<AuditMessage> findByMessageId(String messageId)
+    }
+}
+
+package org.springframework.data {
+    interface JpaRepository<Entity, ID> {
+        + <T> findById(ID id)
+        + <S> save(S entity)
+        + deleteById(ID id)
+        + findAll()
+    }
+    
+    interface MongoRepository<Entity, ID> {
+        + <T> findById(ID id)
+        + <S> save(S entity)
+        + deleteById(ID id)
+        + findAll()
+    }
+}
+
+' Relationships
+TradeRepository --|> JpaRepository : extends
+TradeRepository --> Trade : manages
+
+AuditMessageRepository --|> MongoRepository : extends
+AuditMessageRepository --> AuditMessage : manages
+
+TradeService --> TradeRepository : uses
+TradeService --> AuditMessageRepository : uses
+TradeService --> Trade : processes
+
+KafkaTradeConsumer --> TradeService : delegates
+KafkaTradeConsumer --> AuditMessageRepository : saves
+KafkaTradeConsumer --> TradeMessage : consumes
+KafkaTradeConsumer --> Trade : converts
+
+TradeExpiryScheduler --> TradeRepository : queries
+TradeExpiryScheduler --> Trade : updates
+
+TradeMessage ..> Trade : maps to
+
+' Entity annotations
+note top of Trade
+  @Entity
+  @Table(name = "trades")
+  @EntityListeners(AuditingEntityListener.class)
+end note
+
+note top of AuditMessage
+  @Document(collection = "audit_messages")
+end note
+
+' Service annotations
+note top of TradeService
+  @Service
+  @Transactional
+end note
+
+note top of KafkaTradeConsumer
+  @Service
+  @KafkaListener(topics = "incoming.trade.data")
+end note
+
+note top of TradeExpiryScheduler
+  @Service
+  @EnableScheduling
+  @Scheduled
+end note
+
+' Repository annotations
+note top of TradeRepository
+  @Repository
+end note
+
+note top of AuditMessageRepository
+  @Repository
+end note
+
+@enduml

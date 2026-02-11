@@ -1,0 +1,97 @@
+@startuml Trade Store Service Sequence Diagram
+
+title Trade Store Service - Trade Processing Flow
+
+actor KafkaProducer as Producer
+participant "Kafka Topic\n(incoming.trade.data)" as Kafka
+participant "KafkaTradeConsumer" as Consumer
+participant "TradeService" as Service
+participant "TradeRepository\n(PostgreSQL)" as TradeRepo
+participant "AuditMessageRepository\n(MongoDB)" as AuditRepo
+database "PostgreSQL" as PG
+database "MongoDB" as Mongo
+
+Producer -> Kafka: Send Trade Message (JSON)
+activate Kafka
+
+Kafka -> Consumer: Deliver Message
+activate Consumer
+
+Consumer -> Consumer: Create AuditMessage
+Consumer -> AuditRepo: Save AuditMessage (RECEIVED)
+activate AuditRepo
+AuditRepo -> Mongo: Store Raw Message
+activate Mongo
+Mongo --> AuditRepo: Confirmation
+deactivate Mongo
+AuditRepo --> Consumer: Success
+deactivate AuditRepo
+
+Consumer -> Consumer: Parse JSON to TradeMessage
+Consumer -> Consumer: Convert to Trade Entity
+Consumer -> Service: processTrade(trade)
+activate Service
+
+Service -> Service: validateMaturityDate()
+alt Maturity Date Valid
+    Service -> Service: validateVersion()
+    alt Version Valid
+        Service -> TradeRepo: save(trade)
+        activate TradeRepo
+        TradeRepo -> PG: INSERT/UPDATE Trade
+        activate PG
+        PG --> TradeRepo: Success
+        deactivate PG
+        TradeRepo --> Service: Saved Trade
+        deactivate TradeRepo
+        Service --> Consumer: Success
+    else Version Invalid
+        Service -> Service: throw InvalidTradeException
+        Service --> Consumer: Exception
+    end
+else Maturity Date Invalid
+    Service -> Service: throw InvalidTradeException
+    Service --> Consumer: Exception
+end
+
+deactivate Service
+
+Consumer -> Consumer: Update AuditMessage Status
+alt Processing Success
+    Consumer -> AuditRepo: Update Status (PROCESSED)
+    activate AuditRepo
+    AuditRepo -> Mongo: UPDATE AuditMessage
+    activate Mongo
+    Mongo --> AuditRepo: Success
+    deactivate Mongo
+    AuditRepo --> Consumer: Success
+    deactivate AuditRepo
+else Processing Failed
+    Consumer -> AuditRepo: Update Status (FAILED)
+    activate AuditRepo
+    AuditRepo -> Mongo: UPDATE AuditMessage with Error
+    activate Mongo
+    Mongo --> AuditRepo: Success
+    deactivate Mongo
+    AuditRepo --> Consumer: Success
+    deactivate AuditRepo
+end
+
+Consumer -> Kafka: Acknowledge Message
+activate Kafka
+Kafka --> Consumer: Acknowledged
+deactivate Kafka
+
+deactivate Consumer
+deactivate Kafka
+
+note over Service, PG
+    Scheduled Task (Daily at Midnight):
+    Service -> TradeRepo: findByMaturityDateBeforeAndExpired()
+    TradeRepo -> PG: SELECT expired trades
+    PG -> Service: List of trades
+    Service -> TradeRepo: save(trade.setExpired("Y"))
+    TradeRepo -> PG: UPDATE expired flag
+end note
+
+@enduml

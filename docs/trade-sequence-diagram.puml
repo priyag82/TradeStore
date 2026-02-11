@@ -1,0 +1,56 @@
+@startuml Trade Processing Sequence Diagram
+
+title Trade Processing Sequence Diagram
+participant Kafka as "Kafka Topic\nincoming.trade.data"
+participant Consumer as "KafkaTradeConsumer"
+participant Service as "TradeService"
+participant Validator as "TradeValidator"
+participant Postgres as "PostgreSQL\nTradeRepository"
+participant Mongo as "MongoDB\nAuditMessageRepository"
+
+== Trade Message Processing Flow ==
+
+Kafka -> Consumer : receive JSON message
+activate Consumer
+
+Consumer -> Consumer : parse JSON to TradeMessage
+Consumer -> Consumer : convert TradeMessage to Trade
+
+Consumer -> Service : processTrade(trade)
+activate Service
+
+Service -> Validator : validateTrade(trade)
+activate Validator
+Validator --> Service : validation result
+deactivate Validator
+
+alt Trade is Valid
+    Service -> Postgres : save(trade)
+    activate Postgres
+    Postgres --> Service : trade saved
+    deactivate Postgres
+    
+    Service -> Consumer : trade processed successfully
+else Trade is Invalid
+    Service -> Consumer : throw InvalidTradeException
+end
+
+deactivate Service
+
+Consumer -> Mongo : save(auditMessage)
+activate Mongo
+alt Processing Success
+    Mongo --> Consumer : audit saved with PROCESSED status
+else Processing Failed
+    Mongo --> Consumer : audit saved with FAILED status
+end
+deactivate Mongo
+
+Consumer -> Kafka : acknowledge message
+deactivate Consumer
+
+== Audit Trail Creation ==
+
+note over Consumer : Creates AuditMessage with:\n- messageId\n- topic\n- partition\n- offset\n- messageContent\n- receivedAt\n- processedAt\n- status\n- errorMessage
+
+@enduml
