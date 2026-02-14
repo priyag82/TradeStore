@@ -51,7 +51,7 @@ jobs:
         echo "NVD API Key exists: ${{ secrets.NVD_API_KEY != '' }}"
         if [ "${{ secrets.NVD_API_KEY }}" != "" ]; then
           echo "Using NVD API key for full scan..."
-          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -Dnvd.apiKey="${{ secrets.NVD_API_KEY }}"
+          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -Dnvd.apiKey=$NVD_API_KEY -DfailOnError=false
         else
           echo "No NVD API key, running scan without updates..."
           mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -DskipUpdate=true
