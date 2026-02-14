@@ -217,8 +217,5 @@ public class TradeControllerOptimized {
             this.expiredTrades = expiredTrades;
         }
 
-        public long getTotalTrades() { return totalTrades; }
-        public long getActiveTrades() { return activeTrades; }
-        public long getExpiredTrades() { return expiredTrades; }
     }
 }

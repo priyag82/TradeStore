@@ -19,7 +19,6 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -174,14 +173,6 @@ public class TradeServiceOptimized {
 
     public Optional<Trade> getTrade(com.tradestore.domain.valueobject.TradeId tradeId) {
         return tradeRepository.findById(tradeId);
-    }
-
-    /**
-     * Get all trades - use with caution for large datasets
-     */
-    public List<Trade> getAllTrades() {
-        logger.warn("Getting all trades - this may be slow for large datasets");
-        return tradeRepository.findAll();
     }
 
     /**

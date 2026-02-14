@@ -132,28 +132,8 @@ public class Trade {
         return expired;
     }
 
-    public boolean getExpired() {
-        return expired;
-    }
-
     public void setExpired(boolean expired) {
         this.expired = expired;
-    }
-
-    public LocalDate getTimestamp() {
-        return timestamp;
-    }
-
-    public void setTimestamp(LocalDate timestamp) {
-        this.timestamp = timestamp;
-    }
-
-    public LocalDate getLastUpdated() {
-        return lastUpdated;
-    }
-
-    public void setLastUpdated(LocalDate lastUpdated) {
-        this.lastUpdated = lastUpdated;
     }
 
     @Override
