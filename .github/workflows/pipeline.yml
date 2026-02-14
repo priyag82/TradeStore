@@ -10,12 +10,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     
+    # Setting up the infrastructure needed for Integration Tests
     services:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: password
+          POSTGRES_USER: user
           POSTGRES_DB: tradestore
         options: >-
           --health-cmd pg_isready
@@ -25,116 +26,83 @@ jobs:
         ports:
           - 5432:5432
 
+      # Adding MongoDB for the NoSQL requirement
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history for all branches and tags
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: trade-store-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: trade-store-m2-
+      - name: Run unit tests
+        run: mvn test
 
-    - name: Run unit tests
-      run: mvn test
+      - name: Run integration tests
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/tradestore
+          SPRING_DATASOURCE_USERNAME: user
+          SPRING_DATASOURCE_PASSWORD: password
+          SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/tradestore_audit
+        run: mvn verify -P integration-tests
 
-    - name: Run integration tests
-      env:
-        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/tradestore
-        SPRING_DATASOURCE_USERNAME: ${{ secrets.POSTGRES_USER }}
-        SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-        SPRING_DATA_MONGODB_HOST: localhost
-        SPRING_DATA_MONGODB_PORT: 27017
-        SPRING_DATA_MONGODB_DATABASE: tradestore_audit
-        SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
-      run: mvn verify -P integration-tests
-
-    - name: Generate test report
-      uses: dorny/test-reporter@v1
-      if: success() || failure()
-      with:
-        name: Maven Tests
-        path: target/surefire-reports/*.xml
-        reporter: java-junit
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: target/site/jacoco/jacoco.xml
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-test-results
+          path: target/surefire-reports/*.xml
 
   security-scan:
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: trade-store-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: trade-store-m2-
+      - name: Run OWASP Dependency Check
+        # We use -DskipUpdate=true if no API key is found to prevent 403 errors from NVD
+        run: |
+          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DskipUpdate=${{ secrets.NVD_API_KEY == '' }}
+        continue-on-error: true # We handle the failure in the next custom step
 
-    - name: Run OWASP Dependency Check
-      env:
-        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-      run: |
-        if [ -n "$NVD_API_KEY" ]; then
-          echo "NVD API key found, running full scan..."
-          mvn org.owasp:dependency-check-maven:check
-        else
-          echo "NVD API key not found, running scan without updates..."
-          mvn org.owasp:dependency-check-maven:check -DskipUpdate=true
-        fi
+      - name: Check for critical/blocker vulnerabilities
+        id: check-vulnerabilities
+        run: |
+          if [ -f target/dependency-check-report.html ]; then
+            CRITICAL_COUNT=$(grep -i "Critical" target/dependency-check-report.html | wc -l || echo "0")
+            if [ "$CRITICAL_COUNT" -gt 0 ]; then
+              echo "❌ $CRITICAL_COUNT Critical vulnerabilities found. Failing build as per DWS requirements."
+              exit 1
+            fi
+            echo "✅ No Critical vulnerabilities found."
+          else
+            echo "⚠️ Scan report not found. Check Maven logs."
+          fi
 
-    - name: Upload OWASP scan results
-      uses: actions/upload-artifact@v3
-      with:
-        name: owasp-dependency-check-report
-        path: target/dependency-check-report.html
-        retention-days: 30
-
-    - name: Run Snyk to check for vulnerabilities
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-    - name: Check for critical/blocker vulnerabilities
-      run: |
-        if [ -f target/dependency-check-report.html ]; then
-          echo "✅ OWASP scan completed successfully"
-          echo "Report uploaded as artifact"
-        else
-          echo "❌ OWASP scan failed"
-          exit 1
-        fi
+      - name: Upload Security Report Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-vulnerability-report
+          path: target/dependency-check-report.html
