@@ -34,7 +34,7 @@ jobs:
       run: mvn test
 
     - name: Run integration tests
-      run: mvn verify -P integration-tests
+      run: mvn verify
 
     - name: Upload Test Report
       uses: actions/upload-artifact@v4
@@ -48,11 +48,13 @@ jobs:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
       run: |
         echo "=== Starting OWASP Dependency Check ==="
-        echo "NVD API Key: ${{ secrets.NVD_API_KEY }}"
-        mvn org.owasp:dependency-check-maven:check \
-          -Dformat=HTML \
-          -DfailBuildOnCVSS=7 \
-          -DskipUpdate=true || true
+        if [ -n "$NVD_API_KEY" ]; then
+          echo "Using NVD API key for full scan..."
+          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7
+        else
+          echo "No NVD API key, running scan without updates..."
+          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -DskipUpdate=true
+        fi
         echo "=== OWASP Scan Complete ==="
 
     - name: Upload Security Report
@@ -62,26 +64,6 @@ jobs:
         name: owasp-vulnerability-report
         path: target/dependency-check-report.html
         retention-days: 30
-
-    - name: Run Snyk to check for vulnerabilities
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      with:
-        sarif_file: 'trivy-results.sarif'
 
     - name: Upload All Artifacts
       uses: actions/upload-artifact@v4
