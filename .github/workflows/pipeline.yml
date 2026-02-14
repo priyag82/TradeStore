@@ -126,7 +126,14 @@ jobs:
     - name: Run OWASP Dependency Check
       env:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-      run: mvn org.owasp:dependency-check-maven:check
+      run: |
+        if [ -n "$NVD_API_KEY" ]; then
+          echo "NVD API key found, running full scan..."
+          mvn org.owasp:dependency-check-maven:check
+        else
+          echo "NVD API key not found, running scan without updates..."
+          mvn org.owasp:dependency-check-maven:check -DskipUpdate=true
+        fi
 
     - name: Upload OWASP scan results
       uses: actions/upload-artifact@v3
