@@ -2,10 +2,18 @@ package com.tradestore.service;
 
 import com.tradestore.entity.Trade;
 import com.tradestore.repository.TradeRepository;
+import com.tradestore.domain.valueobject.TradeId;
+import com.tradestore.domain.valueobject.CounterPartyId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.context.TestPropertySource;
 
 import java.time.LocalDate;
@@ -14,7 +22,20 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
+@TestConfiguration
+@EnableScheduling
+class TestConfig {
+    @Bean
+    @Primary
+    public TaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.initialize();
+        return scheduler;
+    }
+}
+
+@SpringBootTest(classes = {TradeExpiryScheduler.class, TestConfig.class})
 @TestPropertySource(properties = {
     "spring.datasource.url=jdbc:h2:mem:testdb",
     "spring.datasource.driver-class-name=org.h2.Driver",
@@ -39,9 +60,9 @@ class TradeExpirySchedulerTest {
         LocalDate yesterday = today.minusDays(1);
         LocalDate tomorrow = today.plusDays(1);
 
-        Trade expiredTrade = createTrade(UUID.randomUUID(), 1, "COUNTER_1", "BOOK_1", yesterday, "N");
-        Trade validTrade = createTrade(UUID.randomUUID(), 1, "COUNTER_2", "BOOK_2", tomorrow, "N");
-        Trade alreadyExpiredTrade = createTrade(UUID.randomUUID(), 1, "COUNTER_3", "BOOK_3", yesterday, "Y");
+        Trade expiredTrade = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_1"), "BOOK_1", yesterday, false);
+        Trade validTrade = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_2"), "BOOK_2", tomorrow, false);
+        Trade alreadyExpiredTrade = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_3"), "BOOK_3", yesterday, true);
 
         tradeRepository.save(expiredTrade);
         tradeRepository.save(validTrade);
@@ -53,15 +74,15 @@ class TradeExpirySchedulerTest {
 
         Trade updatedExpiredTrade = tradeRepository.findById(expiredTrade.getTradeId()).orElse(null);
         assertNotNull(updatedExpiredTrade);
-        assertEquals("Y", updatedExpiredTrade.getExpired());
+        assertTrue(updatedExpiredTrade.isExpired());
 
         Trade unchangedValidTrade = tradeRepository.findById(validTrade.getTradeId()).orElse(null);
         assertNotNull(unchangedValidTrade);
-        assertEquals("N", unchangedValidTrade.getExpired());
+        assertFalse(unchangedValidTrade.isExpired());
 
         Trade unchangedAlreadyExpiredTrade = tradeRepository.findById(alreadyExpiredTrade.getTradeId()).orElse(null);
         assertNotNull(unchangedAlreadyExpiredTrade);
-        assertEquals("Y", unchangedAlreadyExpiredTrade.getExpired());
+        assertTrue(unchangedAlreadyExpiredTrade.isExpired());
     }
 
     @Test
@@ -69,8 +90,8 @@ class TradeExpirySchedulerTest {
         LocalDate today = LocalDate.now();
         LocalDate tomorrow = today.plusDays(1);
 
-        Trade validTrade1 = createTrade(UUID.randomUUID(), 1, "COUNTER_1", "BOOK_1", tomorrow, "N");
-        Trade validTrade2 = createTrade(UUID.randomUUID(), 1, "COUNTER_2", "BOOK_2", tomorrow, "N");
+        Trade validTrade1 = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_1"), "BOOK_1", tomorrow, false);
+        Trade validTrade2 = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_2"), "BOOK_2", tomorrow, false);
 
         tradeRepository.save(validTrade1);
         tradeRepository.save(validTrade2);
@@ -81,7 +102,7 @@ class TradeExpirySchedulerTest {
 
         List<Trade> allTrades = tradeRepository.findAll();
         assertEquals(2, allTrades.size());
-        allTrades.forEach(trade -> assertEquals("N", trade.getExpired()));
+        allTrades.forEach(trade -> assertFalse(trade.isExpired()));
     }
 
     @Test
@@ -96,9 +117,9 @@ class TradeExpirySchedulerTest {
         LocalDate lastWeek = today.minusWeeks(1);
         LocalDate yesterday = today.minusDays(1);
 
-        Trade expiredTrade1 = createTrade(UUID.randomUUID(), 1, "COUNTER_1", "BOOK_1", lastWeek, "N");
-        Trade expiredTrade2 = createTrade(UUID.randomUUID(), 1, "COUNTER_2", "BOOK_2", yesterday, "N");
-        Trade validTrade = createTrade(UUID.randomUUID(), 1, "COUNTER_3", "BOOK_3", today.plusDays(1), "N");
+        Trade expiredTrade1 = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_1"), "BOOK_1", lastWeek, false);
+        Trade expiredTrade2 = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_2"), "BOOK_2", yesterday, false);
+        Trade validTrade = createTrade(TradeId.generate(), 1, CounterPartyId.from("COUNTER_3"), "BOOK_3", today.plusDays(1), false);
 
         tradeRepository.save(expiredTrade1);
         tradeRepository.save(expiredTrade2);
@@ -110,27 +131,34 @@ class TradeExpirySchedulerTest {
 
         Trade updatedExpiredTrade1 = tradeRepository.findById(expiredTrade1.getTradeId()).orElse(null);
         assertNotNull(updatedExpiredTrade1);
-        assertEquals("Y", updatedExpiredTrade1.getExpired());
+        assertTrue(updatedExpiredTrade1.isExpired());
 
         Trade updatedExpiredTrade2 = tradeRepository.findById(expiredTrade2.getTradeId()).orElse(null);
         assertNotNull(updatedExpiredTrade2);
-        assertEquals("Y", updatedExpiredTrade2.getExpired());
+        assertTrue(updatedExpiredTrade2.isExpired());
 
         Trade unchangedValidTrade = tradeRepository.findById(validTrade.getTradeId()).orElse(null);
         assertNotNull(unchangedValidTrade);
-        assertEquals("N", unchangedValidTrade.getExpired());
+        assertFalse(unchangedValidTrade.isExpired());
     }
 
-    private Trade createTrade(UUID tradeId, int version, String counterPartyId, String bookId, 
-                           LocalDate maturityDate, String expired) {
+    private Trade createTrade(TradeId tradeId, int version, CounterPartyId counterPartyId, String bookId, 
+                           LocalDate maturityDate, boolean expired) {
         Trade trade = new Trade();
         trade.setTradeId(tradeId);
         trade.setVersion(version);
         trade.setCounterPartyId(counterPartyId);
         trade.setBookId(bookId);
-        trade.setMaturityDate(maturityDate);
         trade.setCreatedDate(LocalDate.now());
         trade.setExpired(expired);
+        // Use reflection to set maturity date without validation for testing
+        try {
+            java.lang.reflect.Field field = Trade.class.getDeclaredField("maturityDate");
+            field.setAccessible(true);
+            field.set(trade, maturityDate);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         return trade;
     }
 }

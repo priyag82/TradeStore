@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradestore.dto.TradeMessage;
 import com.tradestore.entity.Trade;
 import com.tradestore.repository.TradeRepository;
+import com.tradestore.domain.valueobject.TradeId;
+import com.tradestore.domain.valueobject.CounterPartyId;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,7 +42,7 @@ class TradeIntegrationTest {
 
     @Test
     void testTradeProcessingIntegration() throws Exception {
-        UUID tradeId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        TradeId tradeId = TradeId.from("00000000-0000-0000-0000-000000000001");
 
         // Cleanup from previous runs
         tradeRepository.deleteById(tradeId);
@@ -49,7 +51,7 @@ class TradeIntegrationTest {
 
         // Create trade message (simulating incoming Kafka message)
         TradeMessage tradeMessage = new TradeMessage();
-        tradeMessage.setTradeId(tradeId);
+        tradeMessage.setTradeId(tradeId.getValue());
         tradeMessage.setVersion(1);
         tradeMessage.setCounterPartyId("COUNTER_PARTY_1");
         tradeMessage.setBookId("BOOK_1");
@@ -64,11 +66,11 @@ class TradeIntegrationTest {
         Trade trade = new Trade();
         trade.setTradeId(tradeId);
         trade.setVersion(1);
-        trade.setCounterPartyId("COUNTER_PARTY_1");
+        trade.setCounterPartyId(CounterPartyId.from("COUNTER_PARTY_1"));
         trade.setBookId("BOOK_1");
         trade.setMaturityDate(LocalDate.now().plusYears(1));
         trade.setCreatedDate(LocalDate.now());
-        trade.setExpired("N");
+        trade.setExpired(false);
         
         // Save to H2 database (this is what Kafka consumer would do)
         Trade savedTrade = tradeRepository.save(trade);
@@ -116,9 +118,9 @@ class TradeIntegrationTest {
         Trade retrievedTrade = tradeRepository.findById(tradeId).orElse(null);
         assertNotNull(retrievedTrade);
         assertEquals(1, retrievedTrade.getVersion());
-        assertEquals("COUNTER_PARTY_1", retrievedTrade.getCounterPartyId());
+        assertEquals("COUNTER_PARTY_1", retrievedTrade.getCounterPartyId().getValue());
         assertEquals("BOOK_1", retrievedTrade.getBookId());
-        assertEquals("N", retrievedTrade.getExpired());
+        assertEquals(false, retrievedTrade.isExpired());
 
         // Verify message serialization works (for Kafka)
         String jsonMessage = objectMapper.writeValueAsString(tradeMessage);

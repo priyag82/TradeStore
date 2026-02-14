@@ -1,39 +1,55 @@
 package com.tradestore.entity;
 
+import com.tradestore.domain.valueobject.TradeId;
+import com.tradestore.domain.valueobject.CounterPartyId;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
 @Entity
-@Table(name = "trades")
+@Table(name = "trades", indexes = {
+    @Index(name = "idx_trade_id", columnList = "trade_id"),
+    @Index(name = "idx_maturity_date", columnList = "maturity_date"),
+    @Index(name = "idx_expired", columnList = "expired"),
+    @Index(name = "idx_counter_party", columnList = "counter_party_id"),
+    @Index(name = "idx_book_id", columnList = "book_id")
+})
 @EntityListeners(AuditingEntityListener.class)
 public class Trade {
 
-    @Id
-    @Column(name = "trade_id")
-    private UUID tradeId;
+    @EmbeddedId
+    private TradeId tradeId;
 
     @Column(name = "version", nullable = false)
+    @Min(value = 1, message = "Version must be at least 1")
+    @NotNull(message = "Version is required")
+    @Version
     private Integer version;
 
-    @Column(name = "counter_party_id", nullable = false, length = 50)
-    private String counterPartyId;
+    @Embedded
+    @Column(nullable = false)
+    private CounterPartyId counterPartyId;
 
     @Column(name = "book_id", nullable = false, length = 50)
+    @NotBlank(message = "Book ID is required")
+    @Size(max = 50, message = "Book ID must not exceed 50 characters")
     private String bookId;
 
     @Column(name = "maturity_date", nullable = false)
+    @NotNull(message = "Maturity date is required")
+    @Future(message = "Maturity date must be in the future")
     private LocalDate maturityDate;
 
     @Column(name = "created_date", nullable = false)
+    @NotNull(message = "Created date is required")
     private LocalDate createdDate;
 
-    @Column(name = "expired", nullable = false, length = 1)
-    private String expired;
+    @Column(name = "expired", nullable = false)
+    private boolean expired = false;
 
     @CreatedDate
     @Column(name = "timestamp")
@@ -45,8 +61,8 @@ public class Trade {
 
     public Trade() {}
 
-    public Trade(UUID tradeId, Integer version, String counterPartyId, String bookId, 
-                 LocalDate maturityDate, LocalDate createdDate, String expired) {
+    public Trade(TradeId tradeId, Integer version, CounterPartyId counterPartyId, String bookId, 
+                 LocalDate maturityDate, LocalDate createdDate, boolean expired) {
         this.tradeId = tradeId;
         this.version = version;
         this.counterPartyId = counterPartyId;
@@ -54,13 +70,25 @@ public class Trade {
         this.maturityDate = maturityDate;
         this.createdDate = createdDate;
         this.expired = expired;
+        validateMaturityDate();
     }
 
-    public UUID getTradeId() {
+    private void validateMaturityDate() {
+        if (maturityDate != null && maturityDate.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Trade maturity date cannot be before today");
+        }
+    }
+
+    public void setMaturityDate(LocalDate maturityDate) {
+        this.maturityDate = maturityDate;
+        validateMaturityDate();
+    }
+
+    public TradeId getTradeId() {
         return tradeId;
     }
 
-    public void setTradeId(UUID tradeId) {
+    public void setTradeId(TradeId tradeId) {
         this.tradeId = tradeId;
     }
 
@@ -72,11 +100,11 @@ public class Trade {
         this.version = version;
     }
 
-    public String getCounterPartyId() {
+    public CounterPartyId getCounterPartyId() {
         return counterPartyId;
     }
 
-    public void setCounterPartyId(String counterPartyId) {
+    public void setCounterPartyId(CounterPartyId counterPartyId) {
         this.counterPartyId = counterPartyId;
     }
 
@@ -92,10 +120,6 @@ public class Trade {
         return maturityDate;
     }
 
-    public void setMaturityDate(LocalDate maturityDate) {
-        this.maturityDate = maturityDate;
-    }
-
     public LocalDate getCreatedDate() {
         return createdDate;
     }
@@ -104,11 +128,15 @@ public class Trade {
         this.createdDate = createdDate;
     }
 
-    public String getExpired() {
+    public boolean isExpired() {
         return expired;
     }
 
-    public void setExpired(String expired) {
+    public boolean getExpired() {
+        return expired;
+    }
+
+    public void setExpired(boolean expired) {
         this.expired = expired;
     }
 

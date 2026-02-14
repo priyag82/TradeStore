@@ -90,13 +90,14 @@ public class KafkaTradeConsumer {
 
     private Trade convertToTrade(TradeMessage tradeMessage) {
         Trade trade = new Trade();
-        trade.setTradeId(tradeMessage.getTradeId());
+        trade.setTradeId(com.tradestore.domain.valueobject.TradeId.from(tradeMessage.getTradeId().toString()));
         trade.setVersion(tradeMessage.getVersion());
-        trade.setCounterPartyId(tradeMessage.getCounterPartyId());
+        trade.setCounterPartyId(com.tradestore.domain.valueobject.CounterPartyId.from(tradeMessage.getCounterPartyId()));
         trade.setBookId(tradeMessage.getBookId());
         trade.setMaturityDate(tradeMessage.getMaturityDate());
         trade.setCreatedDate(tradeMessage.getCreatedDate());
-        trade.setExpired(tradeMessage.getExpired() != null ? tradeMessage.getExpired() : "N");
+        trade.setExpired(tradeMessage.getExpired() != null ? 
+            (tradeMessage.getExpired().equalsIgnoreCase("Y") || tradeMessage.getExpired().equalsIgnoreCase("true")) : false);
         
         return trade;
     }

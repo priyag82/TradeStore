@@ -1,5 +1,6 @@
 package com.tradestore.controller;
 
+import com.tradestore.domain.valueobject.TradeId;
 import com.tradestore.entity.Trade;
 import com.tradestore.service.TradeService;
 import org.slf4j.Logger;
@@ -30,15 +31,21 @@ public class TradeController {
     }
 
     @GetMapping("/{tradeId}")
-    public ResponseEntity<Trade> getTrade(@PathVariable UUID tradeId) {
+    public ResponseEntity<Trade> getTrade(@PathVariable String tradeId) {
         logger.info("Getting trade with ID: {}", tradeId);
-        Optional<Trade> trade = tradeService.getTrade(tradeId);
-        
-        if (trade.isPresent()) {
-            return ResponseEntity.ok(trade.get());
-        } else {
-            logger.warn("Trade not found with ID: {}", tradeId);
-            return ResponseEntity.notFound().build();
+        try {
+            TradeId id = TradeId.from(tradeId);
+            Optional<Trade> trade = tradeService.getTrade(id);
+            
+            if (trade.isPresent()) {
+                return ResponseEntity.ok(trade.get());
+            } else {
+                logger.warn("Trade not found with ID: {}", tradeId);
+                return ResponseEntity.notFound().build();
+            }
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid trade ID format: {}", tradeId);
+            return ResponseEntity.badRequest().build();
         }
     }
 
@@ -55,17 +62,21 @@ public class TradeController {
     }
 
     @PutMapping("/{tradeId}")
-    public ResponseEntity<Trade> updateTrade(@PathVariable UUID tradeId, @RequestBody Trade trade) {
+    public ResponseEntity<Trade> updateTrade(@PathVariable String tradeId, @RequestBody Trade trade) {
         logger.info("Updating trade with ID: {}", tradeId);
         
-        if (!tradeId.equals(trade.getTradeId())) {
-            logger.error("Trade ID in path does not match trade ID in body");
-            return ResponseEntity.badRequest().build();
-        }
-        
         try {
+            TradeId pathId = TradeId.from(tradeId);
+            if (!pathId.equals(trade.getTradeId())) {
+                logger.error("Trade ID in path does not match trade ID in body");
+                return ResponseEntity.badRequest().build();
+            }
+            
             Trade updatedTrade = tradeService.processTrade(trade);
             return ResponseEntity.ok(updatedTrade);
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid trade ID format: {}", tradeId);
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
             logger.error("Error updating trade: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
@@ -73,10 +84,16 @@ public class TradeController {
     }
 
     @DeleteMapping("/{tradeId}")
-    public ResponseEntity<Void> deleteTrade(@PathVariable UUID tradeId) {
+    public ResponseEntity<Void> deleteTrade(@PathVariable String tradeId) {
         logger.info("Deleting trade with ID: {}", tradeId);
-        // Note: This would require implementing delete in TradeService and TradeRepository
-        // For now, returning not implemented
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        try {
+            TradeId.from(tradeId); // Validate format
+            // Note: This would require implementing delete in TradeService and TradeRepository
+            // For now, returning not implemented
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid trade ID format: {}", tradeId);
+            return ResponseEntity.badRequest().build();
+        }
     }
 }

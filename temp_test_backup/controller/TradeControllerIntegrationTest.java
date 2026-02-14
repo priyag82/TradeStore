@@ -33,9 +33,9 @@ class TradeControllerIntegrationTest {
     void testGetAllTrades_shouldReturnAllTrades() {
         // Given
         Trade trade1 = new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_1", "BOOK_1", 
-                               LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                               LocalDate.now().plusYears(1), LocalDate.now(), false);
         Trade trade2 = new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_2", "BOOK_2", 
-                               LocalDate.now().plusYears(2), LocalDate.now(), "N");
+                               LocalDate.now().plusYears(2), LocalDate.now(), false);
         tradeRepository.saveAll(Arrays.asList(trade1, trade2));
 
         // When
@@ -52,7 +52,7 @@ class TradeControllerIntegrationTest {
         // Given
         UUID tradeId = UUID.randomUUID();
         Trade trade = new Trade(tradeId, 1, "COUNTER_PARTY_1", "BOOK_1", 
-                              LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                              LocalDate.now().plusYears(1), LocalDate.now(), false);
         tradeRepository.save(trade);
 
         // When
@@ -79,7 +79,7 @@ class TradeControllerIntegrationTest {
         // Given
         UUID tradeId = UUID.randomUUID();
         Trade trade = new Trade(tradeId, 1, "COUNTER_PARTY_1", "BOOK_1", 
-                              LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                              LocalDate.now().plusYears(1), LocalDate.now(), false);
 
         // When
         ResponseEntity<String> response = restTemplate.postForEntity("/api/trades", trade, String.class);
@@ -94,7 +94,7 @@ class TradeControllerIntegrationTest {
     void testCreateTrade_shouldReturnBadRequestWhenInvalid() throws Exception {
         // Given
         Trade invalidTrade = new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_1", "BOOK_1", 
-                                   LocalDate.now().minusDays(1), LocalDate.now(), "N"); // Past maturity date
+                                   LocalDate.now().minusDays(1), LocalDate.now(), false); // Past maturity date
 
         // When
         ResponseEntity<String> response = restTemplate.postForEntity("/api/trades", invalidTrade, String.class);

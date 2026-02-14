@@ -1,0 +1,102 @@
+### Health check
+GET http://localhost:8080/actuator/health
+
+### Create a new trade (H2 Database)
+POST http://localhost:8080/api/trades
+Content-Type: application/json
+
+{
+  "tradeId": "660e8400-e29b-41d4-a716-446655440000",
+  "counterPartyId": "CP-2",
+  "bookId": "B1",
+  "maturityDate": "2026-12-31",
+  "createdDate": "2026-02-14",
+  "expired": false,
+  "version": 1
+}
+
+### Get all trades (H2 Database)
+GET http://localhost:8080/api/trades
+
+### Get specific trade by ID (H2 Database)
+GET http://localhost:8080/api/trades/550e8400-e29b-41d4-a716-446655440000
+
+### Create second trade (H2 Database)
+POST http://localhost:8080/api/trades
+Content-Type: application/json
+
+{
+  "tradeId": "660e8400-e29b-41d4-a716-446655440001",
+  "counterPartyId": "CP-2",
+  "bookId": "B1",
+  "maturityDate": "2026-12-31",
+  "version": 2
+}
+
+### Test version conflict - lower version (should reject)
+POST http://localhost:8080/api/trades
+Content-Type: application/json
+
+{
+  "tradeId": "660e8400-e29b-41d4-a716-446655440001",
+  "counterPartyId": "CP-1",
+  "bookId": "B1",
+  "maturityDate": "2026-12-31",
+  "version": 1
+}
+
+### Test invalid maturity date (should reject)
+POST http://localhost:8080/api/trades
+Content-Type: application/json
+
+{
+  "tradeId": "770e8400-e29b-41d4-a716-446655440002",
+  "counterPartyId": "CP-3",
+  "bookId": "B2",
+  "maturityDate": "2020-01-01",
+  "version": 3
+}
+
+### Update existing trade (H2 Database)
+PUT http://localhost:8080/api/trades/550e8400-e29b-41d4-a716-446655440000
+Content-Type: application/json
+
+{
+  "tradeId": "550e8400-e29b-41d4-a716-446655440000",
+  "counterPartyId": "CP-1",
+  "bookId": "B1",
+  "maturityDate": "2026-12-31",
+  "createdDate": "2026-02-14",
+  "expired": false,
+  "version": 2
+}
+
+### Metrics endpoint
+GET http://localhost:8080/actuator/metrics
+
+### Specific trade metrics
+GET http://localhost:8080/actuator/metrics/trades.processed.total
+
+GET http://localhost:8080/actuator/metrics/trades.rejected.total
+
+GET http://localhost:8080/actuator/metrics/trades.expired.total
+
+### MongoDB Health Check
+GET http://localhost:8080/actuator/health
+
+### H2 Console Access
+### Open in browser: http://localhost:8080/h2-console
+### JDBC URL: jdbc:h2:mem:testdb
+### Username: sa
+### Password: (leave blank)
+
+### Kafka Test (if Kafka is running)
+### Send message to Kafka topic using kafka-console-producer:
+### kafka-topics.bat --create --topic incoming.trade.data --bootstrap-server localhost:9092
+### kafka-console-producer.bat --topic incoming.trade.data --bootstrap-server localhost:9092
+### Message format:
+# {"tradeId":"880e8400-e29b-41d4-a716-446655440003","counterPartyId":"CP-4","bookId":"B3","maturityDate":"2026-12-31","version":1}
+
+### MongoDB Audit Verification (if MongoDB is running)
+### Connect to MongoDB and check tradestore_audit database
+### db.auditmessages.find().pretty()

@@ -5,6 +5,7 @@ import com.tradestore.repository.TradeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +28,7 @@ public class TradeExpiryScheduler {
         logger.info("Completed trade expiry check. Expired {} trades", expiredCount);
     }
 
-    @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedRate = 60000) // Every minute for demo
     public void expireTradesEveryMinute() {
         logger.debug("Running trade expiry check for testing purposes");
         int expiredCount = expireMaturedTrades();
@@ -40,7 +41,7 @@ public class TradeExpiryScheduler {
     public int expireMaturedTrades() {
         LocalDate today = LocalDate.now();
         
-        List<Trade> maturedTrades = tradeRepository.findByMaturityDateBeforeAndExpired(today, "N");
+        List<Trade> maturedTrades = tradeRepository.findTradesToExpireBatch(today, PageRequest.of(0, 1000));
         
         if (maturedTrades.isEmpty()) {
             logger.debug("No matured trades found for expiry");
@@ -50,7 +51,7 @@ public class TradeExpiryScheduler {
         logger.info("Found {} trades to expire with maturity date before today", maturedTrades.size());
         
         for (Trade trade : maturedTrades) {
-            trade.setExpired("Y");
+            trade.setExpired(true);
             tradeRepository.save(trade);
             logger.debug("Expired trade: {} with maturity date: {}", 
                 trade.getTradeId(), trade.getMaturityDate());

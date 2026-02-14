@@ -1,8 +1,11 @@
 package com.tradestore.service;
 
 import com.tradestore.entity.Trade;
-import com.tradestore.exception.InvalidTradeException;
+import com.tradestore.exception.VersionConflictException;
 import com.tradestore.repository.TradeRepository;
+import com.tradestore.domain.valueobject.TradeId;
+import com.tradestore.domain.valueobject.CounterPartyId;
+import io.micrometer.core.instrument.Counter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,15 @@ class TradeServiceTest {
     @Mock
     private TradeRepository tradeRepository;
 
+    @Mock
+    private Counter rejectedTradesCounter;
+    
+    @Mock
+    private Counter processedTradesCounter;
+    
+    @Mock
+    private Counter expiredTradesCounter;
+
     @InjectMocks
     private TradeService tradeService;
 
@@ -41,46 +53,53 @@ class TradeServiceTest {
         LocalDate pastDate = today.minusDays(10);
 
         validTrade = new Trade();
-        validTrade.setTradeId(UUID.randomUUID());
+        validTrade.setTradeId(TradeId.generate());
         validTrade.setVersion(1);
-        validTrade.setCounterPartyId("CP-001");
+        validTrade.setCounterPartyId(CounterPartyId.from("CP-001"));
         validTrade.setBookId("BOOK-001");
         validTrade.setMaturityDate(futureDate);
         validTrade.setCreatedDate(today);
-        validTrade.setExpired("N");
+        validTrade.setExpired(false);
 
         expiredTrade = new Trade();
-        expiredTrade.setTradeId(UUID.randomUUID());
+        expiredTrade.setTradeId(TradeId.generate());
         expiredTrade.setVersion(1);
-        expiredTrade.setCounterPartyId("CP-002");
+        expiredTrade.setCounterPartyId(CounterPartyId.from("CP-002"));
         expiredTrade.setBookId("BOOK-002");
-        expiredTrade.setMaturityDate(pastDate);
         expiredTrade.setCreatedDate(today);
-        expiredTrade.setExpired("N");
+        expiredTrade.setExpired(false);
+        // Use reflection to set maturity date without validation for testing
+        try {
+            java.lang.reflect.Field field = Trade.class.getDeclaredField("maturityDate");
+            field.setAccessible(true);
+            field.set(expiredTrade, pastDate);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
         lowerVersionTrade = new Trade();
-        lowerVersionTrade.setTradeId(UUID.randomUUID());
+        lowerVersionTrade.setTradeId(TradeId.generate());
         lowerVersionTrade.setVersion(1);
-        lowerVersionTrade.setCounterPartyId("CP-003");
+        lowerVersionTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         lowerVersionTrade.setBookId("BOOK-003");
         lowerVersionTrade.setMaturityDate(futureDate);
         lowerVersionTrade.setCreatedDate(today);
-        lowerVersionTrade.setExpired("N");
+        lowerVersionTrade.setExpired(false);
 
         sameVersionTrade = new Trade();
         sameVersionTrade.setTradeId(lowerVersionTrade.getTradeId());
         sameVersionTrade.setVersion(1);
-        sameVersionTrade.setCounterPartyId("CP-003");
+        sameVersionTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         sameVersionTrade.setBookId("BOOK-003");
         sameVersionTrade.setMaturityDate(futureDate);
         sameVersionTrade.setCreatedDate(today);
-        sameVersionTrade.setExpired("N");
+        sameVersionTrade.setExpired(false);
     }
 
     @Test
     @DisplayName("Should accept valid trade with future maturity date")
     void testValidTradeAcceptance() {
-        when(tradeRepository.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(tradeRepository.findById(any(TradeId.class))).thenReturn(Optional.empty());
         when(tradeRepository.save(any(Trade.class))).thenReturn(validTrade);
 
         Trade result = tradeService.processTrade(validTrade);
@@ -92,9 +111,26 @@ class TradeServiceTest {
     @Test
     @DisplayName("Should reject trade with past maturity date")
     void testPastMaturityDateRejection() {
-        InvalidTradeException exception = assertThrows(
-            InvalidTradeException.class,
-            () -> tradeService.processTrade(expiredTrade)
+        // Create a trade with past maturity date using reflection to bypass validation
+        Trade invalidTrade = new Trade();
+        invalidTrade.setTradeId(TradeId.generate());
+        invalidTrade.setVersion(1);
+        invalidTrade.setCounterPartyId(CounterPartyId.from("CP-002"));
+        invalidTrade.setBookId("BOOK-002");
+        invalidTrade.setCreatedDate(LocalDate.now());
+        invalidTrade.setExpired(false);
+        // Use reflection to set past maturity date
+        try {
+            java.lang.reflect.Field field = Trade.class.getDeclaredField("maturityDate");
+            field.setAccessible(true);
+            field.set(invalidTrade, LocalDate.now().minusDays(1));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        IllegalArgumentException exception = assertThrows(
+            IllegalArgumentException.class,
+            () -> tradeService.processTrade(invalidTrade)
         );
 
         assertEquals("Trade maturity date cannot be before today", exception.getMessage());
@@ -107,17 +143,17 @@ class TradeServiceTest {
         Trade existingTrade = new Trade();
         existingTrade.setTradeId(lowerVersionTrade.getTradeId());
         existingTrade.setVersion(2);
-        existingTrade.setCounterPartyId("CP-003");
+        existingTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         existingTrade.setBookId("BOOK-003");
         existingTrade.setMaturityDate(lowerVersionTrade.getMaturityDate());
         existingTrade.setCreatedDate(lowerVersionTrade.getCreatedDate());
-        existingTrade.setExpired("N");
+        existingTrade.setExpired(false);
 
         when(tradeRepository.findById(lowerVersionTrade.getTradeId()))
             .thenReturn(Optional.of(existingTrade));
 
-        InvalidTradeException exception = assertThrows(
-            InvalidTradeException.class,
+        VersionConflictException exception = assertThrows(
+            VersionConflictException.class,
             () -> tradeService.processTrade(lowerVersionTrade)
         );
 
@@ -131,11 +167,11 @@ class TradeServiceTest {
         Trade existingTrade = new Trade();
         existingTrade.setTradeId(sameVersionTrade.getTradeId());
         existingTrade.setVersion(1);
-        existingTrade.setCounterPartyId("CP-003");
+        existingTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         existingTrade.setBookId("BOOK-003");
         existingTrade.setMaturityDate(sameVersionTrade.getMaturityDate());
         existingTrade.setCreatedDate(sameVersionTrade.getCreatedDate());
-        existingTrade.setExpired("N");
+        existingTrade.setExpired(false);
 
         when(tradeRepository.findById(sameVersionTrade.getTradeId()))
             .thenReturn(Optional.of(existingTrade));
@@ -153,20 +189,20 @@ class TradeServiceTest {
         Trade higherVersionTrade = new Trade();
         higherVersionTrade.setTradeId(lowerVersionTrade.getTradeId());
         higherVersionTrade.setVersion(3);
-        higherVersionTrade.setCounterPartyId("CP-003");
+        higherVersionTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         higherVersionTrade.setBookId("BOOK-003");
         higherVersionTrade.setMaturityDate(lowerVersionTrade.getMaturityDate());
         higherVersionTrade.setCreatedDate(lowerVersionTrade.getCreatedDate());
-        higherVersionTrade.setExpired("N");
+        higherVersionTrade.setExpired(false);
 
         Trade existingTrade = new Trade();
         existingTrade.setTradeId(lowerVersionTrade.getTradeId());
         existingTrade.setVersion(2);
-        existingTrade.setCounterPartyId("CP-003");
+        existingTrade.setCounterPartyId(CounterPartyId.from("CP-003"));
         existingTrade.setBookId("BOOK-003");
         existingTrade.setMaturityDate(lowerVersionTrade.getMaturityDate());
         existingTrade.setCreatedDate(lowerVersionTrade.getCreatedDate());
-        existingTrade.setExpired("N");
+        existingTrade.setExpired(false);
 
         when(tradeRepository.findById(higherVersionTrade.getTradeId()))
             .thenReturn(Optional.of(existingTrade));
@@ -182,27 +218,34 @@ class TradeServiceTest {
     @DisplayName("Should mark expired trades as expired")
     void testMarkExpiredTrades() {
         Trade expiredTradeToMark = new Trade();
-        expiredTradeToMark.setTradeId(UUID.randomUUID());
+        expiredTradeToMark.setTradeId(TradeId.generate());
         expiredTradeToMark.setVersion(1);
-        expiredTradeToMark.setCounterPartyId("CP-004");
+        expiredTradeToMark.setCounterPartyId(CounterPartyId.from("CP-004"));
         expiredTradeToMark.setBookId("BOOK-004");
-        expiredTradeToMark.setMaturityDate(LocalDate.now().minusDays(1));
         expiredTradeToMark.setCreatedDate(LocalDate.now().minusDays(30));
-        expiredTradeToMark.setExpired("N");
+        expiredTradeToMark.setExpired(false);
+        // Use reflection to set maturity date without validation for testing
+        try {
+            java.lang.reflect.Field field = Trade.class.getDeclaredField("maturityDate");
+            field.setAccessible(true);
+            field.set(expiredTradeToMark, LocalDate.now().minusDays(1));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
-        when(tradeRepository.findByMaturityDateBeforeAndExpired(any(LocalDate.class), eq("N")))
+        when(tradeRepository.findTradesToExpireBatch(any(LocalDate.class), any()))
             .thenReturn(java.util.Arrays.asList(expiredTradeToMark));
 
         tradeService.markExpiredTrades();
 
         verify(tradeRepository).save(expiredTradeToMark);
-        assertEquals("Y", expiredTradeToMark.getExpired());
+        assertTrue(expiredTradeToMark.isExpired());
     }
 
     @Test
     @DisplayName("Should not mark non-expired trades")
     void testDoNotMarkNonExpiredTrades() {
-        when(tradeRepository.findByMaturityDateBeforeAndExpired(any(LocalDate.class), eq("N")))
+        when(tradeRepository.findTradesToExpireBatch(any(LocalDate.class), any()))
             .thenReturn(java.util.Collections.emptyList());
 
         tradeService.markExpiredTrades();

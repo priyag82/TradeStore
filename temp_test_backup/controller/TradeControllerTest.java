@@ -38,9 +38,9 @@ class TradeControllerTest {
         // Given
         List<Trade> trades = Arrays.asList(
             new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_1", "BOOK_1", 
-                       LocalDate.now().plusYears(1), LocalDate.now(), "N"),
+                       LocalDate.now().plusYears(1), LocalDate.now(), false),
             new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_2", "BOOK_2", 
-                       LocalDate.now().plusYears(2), LocalDate.now(), "N")
+                       LocalDate.now().plusYears(2), LocalDate.now(), false)
         );
         when(tradeService.getAllTrades()).thenReturn(trades);
 
@@ -57,7 +57,7 @@ class TradeControllerTest {
         // Given
         UUID tradeId = UUID.randomUUID();
         Trade trade = new Trade(tradeId, 1, "COUNTER_PARTY_1", "BOOK_1", 
-                              LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                              LocalDate.now().plusYears(1), LocalDate.now(), false);
         when(tradeService.getTrade(tradeId)).thenReturn(Optional.of(trade));
 
         // When & Then
@@ -85,7 +85,7 @@ class TradeControllerTest {
         // Given
         UUID tradeId = UUID.randomUUID();
         Trade trade = new Trade(tradeId, 1, "COUNTER_PARTY_1", "BOOK_1", 
-                              LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                              LocalDate.now().plusYears(1), LocalDate.now(), false);
         when(tradeService.processTrade(any(Trade.class))).thenReturn(trade);
 
         // When & Then
@@ -101,7 +101,7 @@ class TradeControllerTest {
     void createTrade_shouldReturnBadRequestWhenInvalid() throws Exception {
         // Given
         Trade invalidTrade = new Trade(UUID.randomUUID(), 1, "COUNTER_PARTY_1", "BOOK_1", 
-                                   LocalDate.now().minusDays(1), LocalDate.now(), "N"); // Past maturity date
+                                   LocalDate.now().minusDays(1), LocalDate.now(), false); // Past maturity date
         when(tradeService.processTrade(any(Trade.class)))
                 .thenThrow(new RuntimeException("Trade maturity date cannot be before today"));
 
@@ -117,7 +117,7 @@ class TradeControllerTest {
         // Given
         UUID tradeId = UUID.randomUUID();
         Trade trade = new Trade(tradeId, 2, "COUNTER_PARTY_1", "BOOK_1", 
-                              LocalDate.now().plusYears(1), LocalDate.now(), "N");
+                              LocalDate.now().plusYears(1), LocalDate.now(), false);
         when(tradeService.processTrade(any(Trade.class))).thenReturn(trade);
 
         // When & Then

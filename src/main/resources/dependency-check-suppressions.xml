@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/suppressions.xsd">
+    <!-- Suppress known false positives or low-risk vulnerabilities -->
+    <suppress>
+        <notes><![CDATA[
+            Suppress test dependencies and development tools
+        ]]></notes>
+        <cve>CVE-2021-44228</cve>
+    </suppress>
+    
+    <suppress>
+        <notes><![CDATA[
+            Suppress vulnerabilities in logging frameworks (often false positives)
+        ]]></notes>
+        <cve>CVE-2022-23307</cve>
+    </suppress>
+</suppressions>

@@ -14,8 +14,8 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: password
-          POSTGRES_USER: user
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_DB: tradestore
         options: >-
           --health-cmd pg_isready
@@ -81,8 +81,8 @@ jobs:
     - name: Run integration tests
       env:
         SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/tradestore
-        SPRING_DATASOURCE_USERNAME: user
-        SPRING_DATASOURCE_PASSWORD: password
+        SPRING_DATASOURCE_USERNAME: ${{ secrets.POSTGRES_USER }}
+        SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         SPRING_DATA_MONGODB_HOST: localhost
         SPRING_DATA_MONGODB_PORT: 27017
         SPRING_DATA_MONGODB_DATABASE: tradestore_audit
@@ -125,6 +125,13 @@ jobs:
 
     - name: Run OWASP Dependency Check
       run: mvn org.owasp:dependency-check-maven:check
+
+    - name: Run Snyk to check for vulnerabilities
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
