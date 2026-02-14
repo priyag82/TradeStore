@@ -10,26 +10,6 @@ jobs:
   test-and-scan:
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: password
-          POSTGRES_USER: user
-          POSTGRES_DB: tradestore
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      
-      mongodb:
-        image: mongo:6.0
-        ports:
-          - 27017:27017
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -54,12 +34,6 @@ jobs:
       run: mvn test
 
     - name: Run integration tests
-      env:
-        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/tradestore
-        SPRING_DATASOURCE_USERNAME: user
-        SPRING_DATASOURCE_PASSWORD: password
-        SPRING_DATA_MONGODB_URI: mongodb://localhost:27017/tradestore_audit
-        SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
       run: mvn verify -P integration-tests
 
     - name: Upload Test Report
