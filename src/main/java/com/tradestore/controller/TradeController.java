@@ -50,14 +50,20 @@ public class TradeController {
     }
 
     @PostMapping
-    public ResponseEntity<Trade> createTrade(@RequestBody Trade trade) {
-        logger.info("Creating new trade: {}", trade.getTradeId());
+    public ResponseEntity<Trade> createTrade(@RequestBody(required = false) Trade trade) {
+        logger.info("Creating new trade: {}", trade != null ? trade.getTradeId() : "null");
+        
+        if (trade == null) {
+            logger.error("Empty request body received");
+            return ResponseEntity.badRequest().body("Request body cannot be empty");
+        }
+        
         try {
             Trade savedTrade = tradeService.processTrade(trade);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedTrade);
         } catch (Exception e) {
             logger.error("Error creating trade: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
         }
     }
 
