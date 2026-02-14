@@ -48,9 +48,10 @@ jobs:
         NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
       run: |
         echo "=== Starting OWASP Dependency Check ==="
-        if [ -n "$NVD_API_KEY" ]; then
+        echo "NVD API Key exists: ${{ secrets.NVD_API_KEY != '' }}"
+        if [ "${{ secrets.NVD_API_KEY }}" != "" ]; then
           echo "Using NVD API key for full scan..."
-          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7
+          mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -Dnvd.apiKey="${{ secrets.NVD_API_KEY }}"
         else
           echo "No NVD API key, running scan without updates..."
           mvn org.owasp:dependency-check-maven:check -Dformat=HTML -DfailBuildOnCVSS=7 -DskipUpdate=true
