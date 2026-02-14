@@ -28,7 +28,7 @@ class TradeServiceTest {
 
     @Mock
     private TradeRepository tradeRepository;
-
+    
     @Mock
     private Counter rejectedTradesCounter;
     
