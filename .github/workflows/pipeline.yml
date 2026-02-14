@@ -124,7 +124,16 @@ jobs:
         restore-keys: ${{ runner.os }}-m2
 
     - name: Run OWASP Dependency Check
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
       run: mvn org.owasp:dependency-check-maven:check
+
+    - name: Upload OWASP scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: owasp-dependency-check-report
+        path: target/dependency-check-report.html
+        retention-days: 30
 
     - name: Run Snyk to check for vulnerabilities
       uses: snyk/actions/node@master
