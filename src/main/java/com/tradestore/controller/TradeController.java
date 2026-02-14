@@ -35,7 +35,7 @@ public class TradeController {
         logger.info("Getting trade with ID: {}", tradeId);
         try {
             TradeId id = TradeId.from(tradeId);
-            Optional<Trade> trade = tradeService.getTrade(id);
+            Optional<Trade> trade = TradeService.getTrade(id);
             
             if (trade.isPresent()) {
                 return ResponseEntity.ok(trade.get());
@@ -50,20 +50,14 @@ public class TradeController {
     }
 
     @PostMapping
-    public ResponseEntity<Trade> createTrade(@RequestBody(required = false) Trade trade) {
-        logger.info("Creating new trade: {}", trade != null ? trade.getTradeId() : "null");
-        
-        if (trade == null) {
-            logger.error("Empty request body received");
-            return ResponseEntity.badRequest().body("Request body cannot be empty");
-        }
-        
+    public ResponseEntity<Trade> createTrade(@RequestBody Trade trade) {
+        logger.info("Creating new trade: {}", trade.getTradeId());
         try {
-            Trade savedTrade = tradeService.processTrade(trade);
+            Trade savedTrade = TradeService.processTrade(trade);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedTrade);
         } catch (Exception e) {
             logger.error("Error creating trade: {}", e.getMessage());
-            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+            return ResponseEntity.badRequest().build();
         }
     }
 
@@ -78,7 +72,7 @@ public class TradeController {
                 return ResponseEntity.badRequest().build();
             }
             
-            Trade updatedTrade = tradeService.processTrade(trade);
+            Trade updatedTrade = TradeService.processTrade(trade);
             return ResponseEntity.ok(updatedTrade);
         } catch (IllegalArgumentException e) {
             logger.error("Invalid trade ID format: {}", tradeId);
@@ -93,12 +87,14 @@ public class TradeController {
     public ResponseEntity<Void> deleteTrade(@PathVariable String tradeId) {
         logger.info("Deleting trade with ID: {}", tradeId);
         try {
-            TradeId.from(tradeId); // Validate format
-            // Note: This would require implementing delete in TradeService and TradeRepository
-            // For now, returning not implemented
-            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+            TradeId id = TradeId.from(tradeId);
+            TradeService.deleteTrade(id);
+            return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             logger.error("Invalid trade ID format: {}", tradeId);
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            logger.error("Error deleting trade: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
         }
     }
