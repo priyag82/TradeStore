@@ -157,7 +157,7 @@ class TradeServiceTest {
             () -> tradeService.processTrade(lowerVersionTrade)
         );
 
-        assertEquals("Trade version 1 is lower than existing version 2", exception.getMessage());
+        assertEquals("Trade version 1 is lower than existing version 2 - REJECTED", exception.getMessage());
         verify(tradeRepository, never()).save(any(Trade.class));
     }
 
@@ -175,12 +175,15 @@ class TradeServiceTest {
 
         when(tradeRepository.findById(sameVersionTrade.getTradeId()))
             .thenReturn(Optional.of(existingTrade));
-        when(tradeRepository.save(any(Trade.class))).thenReturn(sameVersionTrade);
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(invocation -> {
+            Trade savedTrade = invocation.getArgument(0);
+            return savedTrade; // Return the same object that was saved
+        });
 
         Trade result = tradeService.processTrade(sameVersionTrade);
 
         assertNotNull(result);
-        verify(tradeRepository).save(sameVersionTrade);
+        verify(tradeRepository).save(any(Trade.class));
     }
 
     @Test
@@ -206,12 +209,15 @@ class TradeServiceTest {
 
         when(tradeRepository.findById(higherVersionTrade.getTradeId()))
             .thenReturn(Optional.of(existingTrade));
-        when(tradeRepository.save(any(Trade.class))).thenReturn(higherVersionTrade);
+        when(tradeRepository.save(any(Trade.class))).thenAnswer(invocation -> {
+            Trade savedTrade = invocation.getArgument(0);
+            return savedTrade; // Return the same object that was saved
+        });
 
         Trade result = tradeService.processTrade(higherVersionTrade);
 
         assertNotNull(result);
-        verify(tradeRepository).save(higherVersionTrade);
+        verify(tradeRepository).save(any(Trade.class));
     }
 
     @Test

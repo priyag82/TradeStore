@@ -2,6 +2,7 @@ package com.tradestore.controller;
 
 import com.tradestore.domain.valueobject.TradeId;
 import com.tradestore.entity.Trade;
+import com.tradestore.exception.VersionConflictException;
 import com.tradestore.service.TradeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,7 @@ public class TradeController {
         logger.info("Getting trade with ID: {}", tradeId);
         try {
             TradeId id = TradeId.from(tradeId);
-            Optional<Trade> trade = TradeService.getTrade(id);
+            Optional<Trade> trade = tradeService.getTrade(id);
             
             if (trade.isPresent()) {
                 return ResponseEntity.ok(trade.get());
@@ -53,8 +54,14 @@ public class TradeController {
     public ResponseEntity<Trade> createTrade(@RequestBody Trade trade) {
         logger.info("Creating new trade: {}", trade.getTradeId());
         try {
-            Trade savedTrade = TradeService.processTrade(trade);
+            Trade savedTrade = tradeService.processTrade(trade);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedTrade);
+        } catch (VersionConflictException e) {
+            logger.error("Version conflict: {}", e.getMessage());
+            throw e; // Let global handler handle it
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid argument: {}", e.getMessage());
+            throw e; // Let global handler handle it
         } catch (Exception e) {
             logger.error("Error creating trade: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
@@ -72,7 +79,7 @@ public class TradeController {
                 return ResponseEntity.badRequest().build();
             }
             
-            Trade updatedTrade = TradeService.processTrade(trade);
+            Trade updatedTrade = tradeService.processTrade(trade);
             return ResponseEntity.ok(updatedTrade);
         } catch (IllegalArgumentException e) {
             logger.error("Invalid trade ID format: {}", tradeId);
@@ -88,7 +95,7 @@ public class TradeController {
         logger.info("Deleting trade with ID: {}", tradeId);
         try {
             TradeId id = TradeId.from(tradeId);
-            TradeService.deleteTrade(id);
+            tradeService.deleteTrade(id);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
             logger.error("Invalid trade ID format: {}", tradeId);

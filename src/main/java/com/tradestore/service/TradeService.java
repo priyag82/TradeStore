@@ -44,7 +44,21 @@ public class TradeService {
         try {
             validateVersion(trade);
             validateMaturityDate(trade);
-            Trade savedTrade = tradeRepository.save(trade);
+            
+            // Check if trade exists and update it instead of creating new one
+            Optional<Trade> existingTradeOpt = tradeRepository.findById(trade.getTradeId());
+            Trade tradeToSave = existingTradeOpt.map(existing -> {
+                // Update existing trade with new values
+                existing.setVersion(trade.getVersion());
+                existing.setCounterPartyId(trade.getCounterPartyId());
+                existing.setBookId(trade.getBookId());
+                existing.setMaturityDate(trade.getMaturityDate());
+                existing.setCreatedDate(trade.getCreatedDate());
+                existing.setExpired(trade.isExpired());
+                return existing;
+            }).orElse(trade);
+            
+            Trade savedTrade = tradeRepository.save(tradeToSave);
             processedTradesCounter.increment();
             logger.info("Successfully processed trade: {}", savedTrade.getTradeId());
             return savedTrade;
@@ -67,22 +81,33 @@ public class TradeService {
             Trade existingTrade = existingTradeOpt.get();
             
             if (trade.getVersion() < existingTrade.getVersion()) {
-                String errorMessage = String.format("Trade version %d is lower than existing version %d", 
+                String errorMessage = String.format("Trade version %d is lower than existing version %d - REJECTED", 
                                                    trade.getVersion(), existingTrade.getVersion());
                 logger.error("Version validation failed for trade {}: {}", trade.getTradeId(), errorMessage);
                 throw new VersionConflictException(errorMessage);
             }
             
-            logger.info("Replacing existing trade {} with version {}", 
+            if (trade.getVersion() == existingTrade.getVersion()) {
+                logger.info("Same version {} received for trade {} - REPLACING existing record", 
+                           trade.getVersion(), trade.getTradeId());
+            }
+            
+            if (trade.getVersion() > existingTrade.getVersion()) {
+                logger.info("Higher version {} received for trade {} - UPDATING existing record (was version {})", 
+                           trade.getVersion(), trade.getTradeId(), existingTrade.getVersion());
+            }
+        } else {
+            logger.info("New trade {} with version {} - CREATING new record", 
                        trade.getTradeId(), trade.getVersion());
         }
     }
 
     private void validateMaturityDate(Trade trade) {
-        if (trade.getMaturityDate() != null && trade.getMaturityDate().isBefore(LocalDate.now())) {
-            String errorMessage = "Trade maturity date cannot be before today";
-            logger.error("Maturity date validation failed for trade {}: {}", trade.getTradeId(), errorMessage);
-            throw new IllegalArgumentException(errorMessage);
+        try {
+            trade.validateMaturityDatePublic();
+        } catch (IllegalArgumentException e) {
+            logger.error("Maturity date validation failed for trade {}: {}", trade.getTradeId(), e.getMessage());
+            throw e;
         }
     }
 
@@ -117,5 +142,10 @@ public class TradeService {
 
     public List<Trade> getAllTrades() {
         return tradeRepository.findAll();
+    }
+
+    public void deleteTrade(TradeId tradeId) {
+        logger.info("Deleting trade with ID: {}", tradeId);
+        tradeRepository.deleteById(tradeId);
     }
 }

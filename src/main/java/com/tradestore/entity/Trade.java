@@ -24,11 +24,14 @@ public class Trade {
     @EmbeddedId
     private TradeId tradeId;
 
-    @Column(name = "version", nullable = false)
+    @Column(name = "business_version", nullable = false)
     @Min(value = 1, message = "Version must be at least 1")
     @NotNull(message = "Version is required")
-    @Version
     private Integer version;
+
+    @Version
+    @Column(name = "jpa_version", nullable = false)
+    private Long jpaVersion = 0L;
 
     @Embedded
     @Column(nullable = false)
@@ -70,7 +73,7 @@ public class Trade {
         this.maturityDate = maturityDate;
         this.createdDate = createdDate;
         this.expired = expired;
-        validateMaturityDate();
+        // Validation moved to service layer to allow proper error handling
     }
 
     private void validateMaturityDate() {
@@ -79,9 +82,13 @@ public class Trade {
         }
     }
 
+    public void validateMaturityDatePublic() {
+        validateMaturityDate();
+    }
+
     public void setMaturityDate(LocalDate maturityDate) {
         this.maturityDate = maturityDate;
-        validateMaturityDate();
+        // Validation moved to service layer to allow proper error handling
     }
 
     public TradeId getTradeId() {
