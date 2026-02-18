@@ -1,0 +1,168 @@
+name: TradeStore CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  JAVA_VERSION: '17'
+  MAVEN_OPTS: '-Xmx2048m'
+
+jobs:
+  test-and-scan:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: tradestore_test
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      mongodb:
+        image: mongo:6.0
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Cache Maven Dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Wait for Services
+      run: |
+        echo "Waiting for PostgreSQL..."
+        while ! pg_isready -h localhost -p 5432 -U user -d tradestore_test; do
+          sleep 2
+        done
+        echo "PostgreSQL is ready!"
+        
+        echo "Waiting for MongoDB..."
+        while ! mongosh --eval "db.runCommand({ping: 1})" --quiet; do
+          sleep 2
+        done
+        echo "MongoDB is ready!"
+
+    - name: Run Unit Tests
+      run: mvn test -Dspring.profiles.active=test
+
+    - name: Run Integration Tests
+      run: mvn verify -Dspring.profiles.active=test
+      env:
+        DATABASE_URL: jdbc:postgresql://localhost:5432/tradestore_test
+        DATABASE_USERNAME: user
+        DATABASE_PASSWORD: password
+        MONGODB_DATABASE: tradestore_test
+
+    - name: Generate Test Reports
+      uses: dorny/test-reporter@v1
+      if: success() || failure()
+      with:
+        name: Maven Tests
+        path: target/surefire-reports/*.xml
+        reporter: java-junit
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: |
+          target/surefire-reports/
+          target/failsafe-reports/
+          target/site/
+
+    - name: OWASP Dependency Check
+      run: mvn dependency-check:check -DskipTests
+      continue-on-error: false
+
+    - name: Upload OWASP Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: owasp-report
+        path: target/dependency-check-report.html
+
+    - name: SpotBugs Static Analysis
+      run: mvn spotbugs:check -DskipTests
+      continue-on-error: false
+
+    - name: Upload SpotBugs Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: spotbugs-report
+        path: target/spotbugs.html
+
+    - name: Build Application
+      run: mvn clean package -DskipTests
+
+    - name: Generate SBOM
+      run: mvn cyclonedx:makeAggregateBom
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          target/*.jar
+          target/bom.xml
+
+    - name: Security Scan Summary
+      run: |
+        echo "=== Security Scan Summary ==="
+        echo "OWASP Dependency Check: Completed"
+        echo "SpotBugs Analysis: Completed"
+        echo "SBOM Generated: cyclonedx-bom.xml"
+
+  deploy-staging:
+    needs: test-and-scan
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Deploy to Staging
+      run: |
+        echo "Deploying to staging environment..."
+        echo "This would deploy to your staging server"
+        # Add your staging deployment commands here
+
+  deploy-production:
+    needs: test-and-scan
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Deploy to Production
+      run: |
+        echo "Deploying to production environment..."
+        echo "This would deploy to your production server"
+        # Add your production deployment commands here
