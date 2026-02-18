@@ -12,6 +12,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.LocalDate;
 import java.util.Optional;
@@ -34,6 +37,9 @@ class TradeVersionLogicTest {
 
     @Mock
     private Counter expiredTradesCounter;
+    
+    @Mock
+    private TransactionOperations transactionTemplate;
 
     @InjectMocks
     private TradeService tradeService;
@@ -49,6 +55,18 @@ class TradeVersionLogicTest {
         testCounterPartyId = CounterPartyId.from("CP-1");
         today = LocalDate.now();
         futureDate = today.plusMonths(6);
+        
+        // Mock TransactionTemplate to execute the function directly without TransactionStatus
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            // Execute the callback directly without mocking TransactionStatus
+            org.springframework.transaction.support.TransactionCallback<Trade> callback = 
+                invocation.getArgument(0);
+            try {
+                return callback.doInTransaction(null);
+            } catch (RuntimeException e) {
+                throw e;
+            }
+        });
     }
 
     @Test

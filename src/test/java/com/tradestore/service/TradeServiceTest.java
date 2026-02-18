@@ -13,6 +13,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.LocalDate;
 import java.util.Optional;
@@ -23,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("TradeService Validation Tests")
 class TradeServiceTest {
 
@@ -37,6 +43,9 @@ class TradeServiceTest {
     
     @Mock
     private Counter expiredTradesCounter;
+    
+    @Mock
+    private TransactionOperations transactionTemplate;
 
     @InjectMocks
     private TradeService tradeService;
@@ -51,6 +60,18 @@ class TradeServiceTest {
         LocalDate today = LocalDate.now();
         LocalDate futureDate = today.plusDays(30);
         LocalDate pastDate = today.minusDays(10);
+
+        // Mock TransactionTemplate to execute the function directly without TransactionStatus
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            // Execute the callback directly without mocking TransactionStatus
+            org.springframework.transaction.support.TransactionCallback<Trade> callback = 
+                invocation.getArgument(0);
+            try {
+                return callback.doInTransaction(null);
+            } catch (RuntimeException e) {
+                throw e;
+            }
+        });
 
         validTrade = new Trade();
         validTrade.setTradeId(TradeId.generate());

@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -43,9 +44,8 @@ public class TradeService {
     private Counter expiredTradesCounter;
     
     @Autowired
-    private TransactionTemplate transactionTemplate;
+    private TransactionOperations transactionTemplate;
 
-    @Transactional
     public Trade processTrade(Trade trade) {
         logger.info("Processing trade: {}", trade.getTradeId());
 
@@ -77,12 +77,10 @@ public class TradeService {
             } catch (OptimisticLockingFailureException e) {
                 rejectedTradesCounter.increment();
                 logger.error("Optimistic locking failed for trade {}: {}", trade.getTradeId(), e.getMessage());
-                status.setRollbackOnly();
                 throw new VersionConflictException("Trade was modified by another transaction. Please retry.", e);
             } catch (VersionConflictException e) {
                 rejectedTradesCounter.increment();
                 logger.error("Version conflict for trade {}: {}", trade.getTradeId(), e.getMessage());
-                status.setRollbackOnly();
                 throw e;
             }
         });
