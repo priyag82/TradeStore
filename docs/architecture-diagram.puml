@@ -1,0 +1,156 @@
+@startuml Trade Store Architecture Diagram
+
+title Trade Store Service - System Architecture
+
+package "Client Layer" {
+    rectangle "REST Client\n(Postman/cURL/UI)" as Client
+    rectangle "Kafka Producer\n(External Systems)" as KafkaProducer
+}
+
+package "API Layer" {
+    rectangle "TradeController\n/api/trades" as Controller
+    rectangle "TradeControllerOptimized\n/api/v2/trades" as ControllerOpt
+    rectangle "GlobalExceptionHandler\n@ControllerAdvice" as ExceptionHandler
+}
+
+package "Business Logic Layer" {
+    rectangle "TradeService\n@Transactional" as Service
+    rectangle "TradeServiceOptimized\n@Validated\nBulk Operations" as ServiceOpt
+    rectangle "KafkaTradeConsumer\n@KafkaListener" as Consumer
+}
+
+package "Data Access Layer" {
+    rectangle "TradeRepository\nJpaRepository" as TradeRepo
+    rectangle "AuditMessageRepository\nMongoRepository" as AuditRepo
+}
+
+package "Database Layer" {
+    database "PostgreSQL\nPrimary Store" as PG
+    database "MongoDB\nAudit Store" as Mongo
+}
+
+package "Infrastructure" {
+    rectangle "Kafka Cluster\n(tradestore topic)" as Kafka
+    rectangle "Spring Boot\nApplication" as SpringBoot
+    rectangle "Actuator\n/Metrics/Health" as Actuator
+}
+
+package "Monitoring & Observability" {
+    rectangle "Prometheus\nMetrics" as Prometheus
+    rectangle "Micrometer\nCounters" as Micrometer
+}
+
+' Connections
+Client --> Controller : HTTP/REST
+Client --> ControllerOpt : HTTP/REST
+Controller --> Service : DI
+ControllerOpt --> ServiceOpt : DI
+Controller --> ExceptionHandler : Exception Handling
+ControllerOpt --> ExceptionHandler : Exception Handling
+
+KafkaProducer --> Kafka : Send Messages
+Kafka --> Consumer : Consume Messages
+Consumer --> Service : Process Trades
+
+Service --> TradeRepo : JPA Operations
+ServiceOpt --> TradeRepo : JPA Operations
+Consumer --> AuditRepo : MongoDB Operations
+
+TradeRepo --> PG : CRUD Operations
+AuditRepo --> Mongo : Document Operations
+
+SpringBoot --> Controller : Component Scan
+SpringBoot --> Service : Component Scan
+SpringBoot --> ServiceOpt : Component Scan
+SpringBoot --> Consumer : Component Scan
+SpringBoot --> ExceptionHandler : Component Scan
+
+Service --> Micrometer : Metrics Collection
+ServiceOpt --> Micrometer : Metrics Collection
+Micrometer --> Prometheus : Export Metrics
+
+Actuator --> Prometheus : Metrics Endpoint
+
+' Styling
+skinparam rectangle {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+    ArrowColor Black
+}
+
+skinparam database {
+    BackgroundColor LightYellow
+    BorderColor Orange
+    ArrowColor Black
+}
+
+skinparam package {
+    BackgroundColor LightGray
+    BorderColor Gray
+    ArrowColor Black
+}
+
+skinparam note {
+    BackgroundColor LightCyan
+    BorderColor Blue
+}
+
+' Notes
+note top of Client
+  - REST API Consumers
+  - External Systems
+  - Testing Tools
+end note
+
+note top of Controller
+  - Basic CRUD Operations
+  - Single Trade Processing
+  - Path: /api/trades/*
+end note
+
+note top of ControllerOpt
+  - Advanced Features
+  - Bulk Operations
+  - Pagination
+  - Statistics
+  - Path: /api/v2/trades/*
+end note
+
+note top of Service
+  - Core Business Logic
+  - Version Management
+  - Maturity Validation
+  - Scheduled Expiry
+  - Single Trade Focus
+end note
+
+note top of ServiceOpt
+  - Performance Optimized
+  - Bulk Processing
+  - Async Operations
+  - Pagination Support
+  - Enhanced Validation
+end note
+
+note top of PG
+  - Primary Trade Data
+  - ACID Transactions
+  - Optimistic Locking
+  - Indexed Queries
+end note
+
+note top of Mongo
+  - Audit Trail
+  - Message History
+  - Error Tracking
+  - Schema-less Storage
+end note
+
+note bottom of SpringBoot
+  - Auto-Configuration
+  - Dependency Injection
+  - Embedded Tomcat
+  - Profile Management
+end note
+
+@enduml

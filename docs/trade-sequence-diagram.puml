@@ -1,56 +1,141 @@
 @startuml Trade Processing Sequence Diagram
 
-title Trade Processing Sequence Diagram
-participant Kafka as "Kafka Topic\nincoming.trade.data"
-participant Consumer as "KafkaTradeConsumer"
+title Trade Processing - Updated Sequence Diagram
+
+participant Client as "Client"
+participant Controller as "TradeController\n/api/trades"
+participant ControllerOpt as "TradeControllerOptimized\n/api/v2/trades"
 participant Service as "TradeService"
-participant Validator as "TradeValidator"
+participant ServiceOpt as "TradeServiceOptimized"
 participant Postgres as "PostgreSQL\nTradeRepository"
-participant Mongo as "MongoDB\nAuditMessageRepository"
+participant ExceptionHandler as "GlobalExceptionHandler"
 
-== Trade Message Processing Flow ==
+== Single Trade Processing Flow ==
 
-Kafka -> Consumer : receive JSON message
-activate Consumer
+Client -> Controller: POST /api/trades (Trade JSON)
+activate Controller
 
-Consumer -> Consumer : parse JSON to TradeMessage
-Consumer -> Consumer : convert TradeMessage to Trade
-
-Consumer -> Service : processTrade(trade)
+Controller -> Service: processTrade(trade)
 activate Service
 
-Service -> Validator : validateTrade(trade)
-activate Validator
-Validator --> Service : validation result
-deactivate Validator
+Service -> Service: validateMaturityDate()
+Service -> Service: validateVersion()
 
-alt Trade is Valid
-    Service -> Postgres : save(trade)
-    activate Postgres
-    Postgres --> Service : trade saved
-    deactivate Postgres
-    
-    Service -> Consumer : trade processed successfully
-else Trade is Invalid
-    Service -> Consumer : throw InvalidTradeException
+Service -> Postgres: findById(tradeId)
+activate Postgres
+Postgres --> Service: Optional<Trade>
+deactivate Postgres
+
+alt Trade Exists
+    Service -> Service: Update existing trade
+else New Trade
+    Service -> Service: Create new trade
 end
 
+Service -> Postgres: save(trade)
+activate Postgres
+Postgres --> Service: Saved Trade
+deactivate Postgres
+
+Service --> Controller: Success
 deactivate Service
 
-Consumer -> Mongo : save(auditMessage)
-activate Mongo
-alt Processing Success
-    Mongo --> Consumer : audit saved with PROCESSED status
-else Processing Failed
-    Mongo --> Consumer : audit saved with FAILED status
+Controller --> Client: 201 Created + Trade
+deactivate Controller
+
+== Bulk Trade Processing Flow ==
+
+Client -> ControllerOpt: POST /api/v2/trades/bulk (List<Trade>)
+activate ControllerOpt
+
+ControllerOpt -> ServiceOpt: processTradesInBulk(trades)
+activate ServiceOpt
+
+ServiceOpt -> ServiceOpt: Validate all trades
+loop For each trade
+    ServiceOpt -> ServiceOpt: validateMaturityDate()
+    ServiceOpt -> ServiceOpt: validateVersion()
 end
-deactivate Mongo
 
-Consumer -> Kafka : acknowledge message
-deactivate Consumer
+ServiceOpt -> Postgres: saveAll(trades)
+activate Postgres
+Postgres --> ServiceOpt: List<Trade>
+deactivate Postgres
 
-== Audit Trail Creation ==
+ServiceOpt --> ControllerOpt: Success
+deactivate ServiceOpt
 
-note over Consumer : Creates AuditMessage with:\n- messageId\n- topic\n- partition\n- offset\n- messageContent\n- receivedAt\n- processedAt\n- status\n- errorMessage
+ControllerOpt --> Client: 201 Created + List<Trade>
+deactivate ControllerOpt
+
+== Exception Handling Flow ==
+
+Client -> Controller: POST /api/trades (Invalid Trade)
+activate Controller
+
+Controller -> Service: processTrade(invalidTrade)
+activate Service
+
+Service -> Service: throw InvalidTradeException
+Service --> Controller: Exception
+deactivate Service
+
+Controller -> ExceptionHandler: handleInvalidTradeException()
+activate ExceptionHandler
+ExceptionHandler -> ExceptionHandler: createProblemDetails()
+ExceptionHandler --> Controller: ResponseEntity with Problem Details
+deactivate ExceptionHandler
+
+Controller --> Client: 400 Bad Request + Problem Details
+deactivate Controller
+
+== Version Conflict Flow ==
+
+Client -> Controller: PUT /api/trades/{id} (Lower Version)
+activate Controller
+
+Controller -> Service: processTrade(trade)
+activate Service
+
+Service -> Service: validateVersion()
+Service -> Service: throw VersionConflictException
+Service --> Controller: Exception
+deactivate Service
+
+Controller -> ExceptionHandler: handleVersionConflictException()
+activate ExceptionHandler
+ExceptionHandler --> Controller: 409 Conflict Response
+deactivate ExceptionHandler
+
+Controller --> Client: 409 Conflict + Problem Details
+deactivate Controller
+
+== Scheduled Expiry Task ==
+
+note over Service, Postgres
+    Daily at Midnight:
+    markExpiredTrades()
+end note
+
+Service -> Service: log "Starting expiry task"
+
+Service -> Postgres: findTradesToExpireBatch(currentDate, pageable)
+activate Postgres
+Postgres --> Service: List<Trade> to expire
+deactivate Postgres
+
+alt Trades Found
+    loop For each trade
+        Service -> Service: trade.setExpired(true)
+        Service -> Postgres: save(trade)
+        activate Postgres
+        Postgres --> Service: Success
+        deactivate Postgres
+    end
+else No Trades
+    Service -> Service: log "No trades to expire"
+end
+
+Service -> Service: log "Completed expiry task"
 
 @enduml

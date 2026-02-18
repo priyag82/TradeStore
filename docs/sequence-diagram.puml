@@ -1,41 +1,41 @@
 @startuml Trade Store Service Sequence Diagram
 
-title Trade Store Service - Trade Processing Flow
+title Trade Store Service - Updated Trade Processing Flow
 
-actor KafkaProducer as Producer
-participant "Kafka Topic\n(incoming.trade.data)" as Kafka
-participant "KafkaTradeConsumer" as Consumer
+actor Client as Client
+participant "TradeController\n(/api/trades)" as Controller
 participant "TradeService" as Service
 participant "TradeRepository\n(PostgreSQL)" as TradeRepo
-participant "AuditMessageRepository\n(MongoDB)" as AuditRepo
 database "PostgreSQL" as PG
-database "MongoDB" as Mongo
+participant "GlobalExceptionHandler" as ExceptionHandler
 
-Producer -> Kafka: Send Trade Message (JSON)
-activate Kafka
+== REST API Trade Processing Flow ==
 
-Kafka -> Consumer: Deliver Message
-activate Consumer
+Client -> Controller: POST /api/trades (Trade JSON)
+activate Controller
 
-Consumer -> Consumer: Create AuditMessage
-Consumer -> AuditRepo: Save AuditMessage (RECEIVED)
-activate AuditRepo
-AuditRepo -> Mongo: Store Raw Message
-activate Mongo
-Mongo --> AuditRepo: Confirmation
-deactivate Mongo
-AuditRepo --> Consumer: Success
-deactivate AuditRepo
-
-Consumer -> Consumer: Parse JSON to TradeMessage
-Consumer -> Consumer: Convert to Trade Entity
-Consumer -> Service: processTrade(trade)
+Controller -> Service: processTrade(trade)
 activate Service
 
 Service -> Service: validateMaturityDate()
 alt Maturity Date Valid
     Service -> Service: validateVersion()
     alt Version Valid
+        Service -> TradeRepo: findById(tradeId)
+        activate TradeRepo
+        TradeRepo -> PG: SELECT trade
+        activate PG
+        PG --> TradeRepo: Existing Trade (if any)
+        deactivate PG
+        TradeRepo --> Service: Optional<Trade>
+        deactivate TradeRepo
+        
+        alt Trade Exists
+            Service -> Service: Update existing trade fields
+        else New Trade
+            Service -> Service: Use new trade
+        end
+        
         Service -> TradeRepo: save(trade)
         activate TradeRepo
         TradeRepo -> PG: INSERT/UPDATE Trade
@@ -44,54 +44,121 @@ alt Maturity Date Valid
         deactivate PG
         TradeRepo --> Service: Saved Trade
         deactivate TradeRepo
-        Service --> Consumer: Success
+        
+        Service -> Service: increment processedTradesCounter
+        Service --> Controller: Success
     else Version Invalid
-        Service -> Service: throw InvalidTradeException
-        Service --> Consumer: Exception
+        Service -> Service: increment rejectedTradesCounter
+        Service -> Service: throw VersionConflictException
+        Service --> Controller: Exception
     end
 else Maturity Date Invalid
     Service -> Service: throw InvalidTradeException
-    Service --> Consumer: Exception
+    Service --> Controller: Exception
 end
 
 deactivate Service
 
-Consumer -> Consumer: Update AuditMessage Status
 alt Processing Success
-    Consumer -> AuditRepo: Update Status (PROCESSED)
-    activate AuditRepo
-    AuditRepo -> Mongo: UPDATE AuditMessage
-    activate Mongo
-    Mongo --> AuditRepo: Success
-    deactivate Mongo
-    AuditRepo --> Consumer: Success
-    deactivate AuditRepo
+    Controller --> Client: 201 Created + Trade
 else Processing Failed
-    Consumer -> AuditRepo: Update Status (FAILED)
-    activate AuditRepo
-    AuditRepo -> Mongo: UPDATE AuditMessage with Error
-    activate Mongo
-    Mongo --> AuditRepo: Success
-    deactivate Mongo
-    AuditRepo --> Consumer: Success
-    deactivate AuditRepo
+    Controller -> ExceptionHandler: handleException()
+    activate ExceptionHandler
+    ExceptionHandler --> Controller: Error Response
+    deactivate ExceptionHandler
+    Controller --> Client: 400/409 Error + Problem Details
 end
 
-Consumer -> Kafka: Acknowledge Message
-activate Kafka
-Kafka --> Consumer: Acknowledged
-deactivate Kafka
+deactivate Controller
 
-deactivate Consumer
-deactivate Kafka
+== Scheduled Task - Trade Expiry ==
 
 note over Service, PG
     Scheduled Task (Daily at Midnight):
-    Service -> TradeRepo: findByMaturityDateBeforeAndExpired()
-    TradeRepo -> PG: SELECT expired trades
-    PG -> Service: List of trades
-    Service -> TradeRepo: save(trade.setExpired("Y"))
-    TradeRepo -> PG: UPDATE expired flag
+    markExpiredTrades()
 end note
+
+Service -> Service: log "Starting scheduled task to mark expired trades"
+
+Service -> TradeRepo: findTradesToExpireBatch(currentDate, pageable)
+activate TradeRepo
+TradeRepo -> PG: SELECT trades WHERE maturityDate < currentDate AND expired = false
+activate PG
+PG -> TradeRepo: List<Trade> (batch)
+deactivate PG
+TradeRepo --> Service: Trades to expire
+deactivate TradeRepo
+
+alt Trades Found
+    loop For each trade in batch
+        Service -> Service: trade.setExpired(true)
+        Service -> Service: increment expiredTradesCounter
+        Service -> TradeRepo: save(trade)
+        activate TradeRepo
+        TradeRepo -> PG: UPDATE trade SET expired = true
+        activate PG
+        PG --> TradeRepo: Success
+        deactivate PG
+        TradeRepo --> Service: Updated Trade
+        deactivate TradeRepo
+    end
+    
+    Service -> Service: log "Completed marking X trades as expired"
+else No Trades
+    Service -> Service: log "No trades to expire"
+end
+
+== Optimized Service Flow (TradeServiceOptimized) ==
+
+participant "TradeControllerOptimized\n(/api/v2/trades)" as ControllerOpt
+participant "TradeServiceOptimized" as ServiceOpt
+
+Client -> ControllerOpt: POST /api/v2/trades/bulk (List<Trade>)
+activate ControllerOpt
+
+ControllerOpt -> ServiceOpt: processTradesInBulk(trades)
+activate ServiceOpt
+
+ServiceOpt -> ServiceOpt: Validate all trades first
+loop For each trade
+    ServiceOpt -> ServiceOpt: validateMaturityDate()
+    ServiceOpt -> ServiceOpt: validateVersion()
+end
+
+ServiceOpt -> TradeRepo: saveAll(trades)
+activate TradeRepo
+TradeRepo -> PG: BATCH INSERT/UPDATE
+activate PG
+PG --> TradeRepo: Success
+deactivate PG
+TradeRepo --> ServiceOpt: List<Trade>
+deactivate TradeRepo
+
+ServiceOpt --> ControllerOpt: Success
+deactivate ServiceOpt
+
+ControllerOpt --> Client: 201 Created + List<Trade>
+deactivate ControllerOpt
+
+== Exception Handling Flow ==
+
+Client -> Controller: Invalid Request
+activate Controller
+
+Controller -> Service: processTrade(invalidTrade)
+activate Service
+
+Service -> Service: throw InvalidTradeException
+Service --> Controller: Exception
+deactivate Service
+
+Controller -> ExceptionHandler: handleInvalidTradeException()
+activate ExceptionHandler
+ExceptionHandler -> ExceptionHandler: createProblemDetails()
+ExceptionHandler --> Controller: ResponseEntity with Problem Details
+deactivate ExceptionHandler
+
+Controller --> Client: 400 Bad Request + Problem Details
+deactivate Controller
 
 @enduml

@@ -1,0 +1,19 @@
+@startuml Test Diagram
+
+title Simple Test Diagram
+
+package "Test Package" {
+    [Component A] as A
+    [Component B] as B
+}
+
+database "Database" as DB
+
+A --> B : Connection
+B --> DB : Data Access
+
+note right of A : This is component A
+note right of B : This is component B
+note right of DB : This is database
+
+@enduml

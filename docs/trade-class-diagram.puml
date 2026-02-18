@@ -1,21 +1,48 @@
 @startuml Trade System Class Diagram
 
-title Trade System Class Diagram
+title Trade System - Updated Class Diagram
+
+package com.tradestore.domain.valueobject {
+    class TradeId {
+        - UUID value
+        --
+        + TradeId(UUID value)
+        + generate(): TradeId
+        + from(String uuidString): TradeId
+        + getValue(): UUID
+        + equals(Object o): boolean
+        + hashCode(): int
+        + toString(): String
+    }
+    
+    class CounterPartyId {
+        - String value
+        --
+        + CounterPartyId(String value)
+        + from(String value): CounterPartyId
+        + getValue(): String
+        + equals(Object o): boolean
+        + hashCode(): int
+        + toString(): String
+    }
+}
 
 package com.tradestore.entity {
     class Trade {
-        - UUID tradeId
+        - TradeId tradeId
         - Integer version
-        - String counterPartyId
+        - Long jpaVersion
+        - CounterPartyId counterPartyId
         - String bookId
         - LocalDate maturityDate
         - LocalDate createdDate
-        - String expired
+        - boolean expired
         - LocalDate timestamp
         - LocalDate lastUpdated
         --
         + getters()
         + setters()
+        + validateMaturityDatePublic(): void
         + toString()
     }
     
@@ -56,11 +83,30 @@ package com.tradestore.dto {
 package com.tradestore.service {
     class TradeService {
         - TradeRepository tradeRepository
-        - AuditMessageRepository auditMessageRepository
+        - Counter rejectedTradesCounter
+        - Counter processedTradesCounter
+        - Counter expiredTradesCounter
         --
         + processTrade(Trade trade)
-        + validateTrade(Trade trade)
-        + saveTrade(Trade trade)
+        + markExpiredTrades()
+        + getTrade(tradeId)
+        + getAllTrades()
+        + deleteTrade(tradeId)
+    }
+    
+    class TradeServiceOptimized {
+        - TradeRepository tradeRepository
+        - static final int BATCH_SIZE
+        - static final Executor asyncExecutor
+        --
+        + processTrade(Trade trade)
+        + processTradesInBulk(List<Trade> trades)
+        + getTradesPaginated(page, size, sortBy, sortDir)
+        + getTradesByCounterParty(counterPartyId, page, size)
+        + markExpiredTradesOptimized()
+        + markExpiredTradesAsync()
+        + getTradeCount()
+        + getTradeCountByExpiry(expired)
     }
     
     class KafkaTradeConsumer {
@@ -72,27 +118,21 @@ package com.tradestore.service {
         - createAuditMessage(message, topic, partition, offset)
         - convertToTrade(TradeMessage tradeMessage)
     }
-    
-    class TradeExpiryScheduler {
-        - TradeRepository tradeRepository
-        --
-        + expireTradesAtMidnight()
-        + expireTradesEveryMinute()
-        + expireMaturedTrades()
-    }
 }
 
 package com.tradestore.repository {
     interface TradeRepository {
         + <T> findById(ID id)
         + <S> save(S entity)
-        + List<Trade> findByMaturityDateBeforeAndExpired(LocalDate date, String expired)
-        + boolean existsByTradeId(UUID tradeId)
+        + List<Trade> findAll()
+        + List<Trade> findTradesToExpireBatch(currentDate, pageable)
+        + Page<Trade> findByCounterPartyId(counterPartyId, pageable)
+        + long countByExpired(expired)
     }
     
     interface AuditMessageRepository {
         + <S> save(S entity)
-        + List<AuditMessage> findByStatus(String status)
+        + List<AuditMessage> findAll()
         + Optional<AuditMessage> findByMessageId(String messageId)
     }
 }
@@ -114,6 +154,8 @@ package org.springframework.data {
 }
 
 ' Relationships
+Trade --> TradeId : "has"
+Trade --> CounterPartyId : "has"
 TradeRepository --|> JpaRepository : extends
 TradeRepository --> Trade : manages
 
@@ -121,24 +163,35 @@ AuditMessageRepository --|> MongoRepository : extends
 AuditMessageRepository --> AuditMessage : manages
 
 TradeService --> TradeRepository : uses
-TradeService --> AuditMessageRepository : uses
 TradeService --> Trade : processes
+
+TradeServiceOptimized --> TradeRepository : uses
+TradeServiceOptimized --> Trade : processes
 
 KafkaTradeConsumer --> TradeService : delegates
 KafkaTradeConsumer --> AuditMessageRepository : saves
 KafkaTradeConsumer --> TradeMessage : consumes
 KafkaTradeConsumer --> Trade : converts
 
-TradeExpiryScheduler --> TradeRepository : queries
-TradeExpiryScheduler --> Trade : updates
-
-TradeMessage ..> Trade : maps to
-
 ' Entity annotations
 note top of Trade
   @Entity
-  @Table(name = "trades")
+  @Table(name = "trades", indexes = {
+    @Index(name = "idx_trade_id", columnList = "trade_id"),
+    @Index(name = "idx_maturity_date", columnList = "maturity_date"),
+    @Index(name = "idx_expired", columnList = "expired")
+  })
   @EntityListeners(AuditingEntityListener.class)
+end note
+
+note top of TradeId
+  @Embeddable
+  @Column(name = "trade_id", columnDefinition = "BINARY(16)")
+end note
+
+note top of CounterPartyId
+  @Embeddable
+  @Column(name = "counter_party_id", nullable = false, length = 50)
 end note
 
 note top of AuditMessage
@@ -149,17 +202,20 @@ end note
 note top of TradeService
   @Service
   @Transactional
+  @Scheduled(cron = "0 0 0 * * *")
+end note
+
+note top of TradeServiceOptimized
+  @Service
+  @Transactional
+  @Validated
+  @Scheduled(cron = "0 0 0 * * *")
+  @Scheduled(cron = "0 30 0 * * *")
 end note
 
 note top of KafkaTradeConsumer
   @Service
-  @KafkaListener(topics = "incoming.trade.data")
-end note
-
-note top of TradeExpiryScheduler
-  @Service
-  @EnableScheduling
-  @Scheduled
+  @KafkaListener(topics = "tradestore")
 end note
 
 ' Repository annotations

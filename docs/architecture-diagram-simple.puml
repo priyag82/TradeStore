@@ -1,0 +1,83 @@
+@startuml Trade Store Architecture Diagram
+
+title Trade Store Service - System Architecture
+
+package "Client Layer" {
+    [REST Client] as Client
+    [Kafka Producer] as KafkaProducer
+}
+
+package "API Layer" {
+    [TradeController] as Controller
+    [TradeControllerOptimized] as ControllerOpt
+    [GlobalExceptionHandler] as ExceptionHandler
+}
+
+package "Business Logic Layer" {
+    [TradeService] as Service
+    [TradeServiceOptimized] as ServiceOpt
+    [KafkaTradeConsumer] as Consumer
+}
+
+package "Data Access Layer" {
+    [TradeRepository] as TradeRepo
+    [AuditMessageRepository] as AuditRepo
+}
+
+package "Database Layer" {
+    database "PostgreSQL" as PG
+    database "MongoDB" as Mongo
+}
+
+package "Infrastructure" {
+    [Kafka Cluster] as Kafka
+    [Spring Boot] as SpringBoot
+    [Actuator] as Actuator
+}
+
+package "Monitoring" {
+    [Prometheus] as Prometheus
+    [Micrometer] as Micrometer
+}
+
+' Connections
+Client --> Controller : HTTP/REST
+Client --> ControllerOpt : HTTP/REST
+Controller --> Service : DI
+ControllerOpt --> ServiceOpt : DI
+Controller --> ExceptionHandler : Exception Handling
+ControllerOpt --> ExceptionHandler : Exception Handling
+
+KafkaProducer --> Kafka : Send Messages
+Kafka --> Consumer : Consume Messages
+Consumer --> Service : Process Trades
+
+Service --> TradeRepo : JPA Operations
+ServiceOpt --> TradeRepo : JPA Operations
+Consumer --> AuditRepo : MongoDB Operations
+
+TradeRepo --> PG : CRUD Operations
+AuditRepo --> Mongo : Document Operations
+
+SpringBoot --> Controller : Component Scan
+SpringBoot --> Service : Component Scan
+SpringBoot --> ServiceOpt : Component Scan
+SpringBoot --> Consumer : Component Scan
+SpringBoot --> ExceptionHandler : Component Scan
+
+Service --> Micrometer : Metrics Collection
+ServiceOpt --> Micrometer : Metrics Collection
+Micrometer --> Prometheus : Export Metrics
+Actuator --> Prometheus : Metrics Endpoint
+
+' Notes
+note right of Client : REST API Consumers\nExternal Systems\nTesting Tools
+note right of Controller : Basic CRUD\nSingle Trade\n/api/trades/*
+note right of ControllerOpt : Advanced Features\nBulk Operations\n/api/v2/trades/*
+note right of Service : Core Logic\nVersion Management\nScheduled Expiry
+note right of ServiceOpt : Performance\nBulk Processing\nAsync Operations
+note right of PG : Primary Trade Data\nACID Transactions\nOptimistic Locking
+note right of Mongo : Audit Trail\nMessage History\nError Tracking
+note right of SpringBoot : Auto-Configuration\nDependency Injection\nEmbedded Tomcat
+
+@enduml

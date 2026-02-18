@@ -14,6 +14,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,7 +26,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
-@Transactional
 public class TradeService {
 
     private static final Logger logger = LoggerFactory.getLogger(TradeService.class);
@@ -37,40 +41,51 @@ public class TradeService {
     
     @Autowired
     private Counter expiredTradesCounter;
+    
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
+    @Transactional
     public Trade processTrade(Trade trade) {
         logger.info("Processing trade: {}", trade.getTradeId());
 
-        try {
-            validateVersion(trade);
-            validateMaturityDate(trade);
-            
-            // Check if trade exists and update it instead of creating new one
-            Optional<Trade> existingTradeOpt = tradeRepository.findById(trade.getTradeId());
-            Trade tradeToSave = existingTradeOpt.map(existing -> {
-                // Update existing trade with new values
-                existing.setVersion(trade.getVersion());
-                existing.setCounterPartyId(trade.getCounterPartyId());
-                existing.setBookId(trade.getBookId());
-                existing.setMaturityDate(trade.getMaturityDate());
-                existing.setCreatedDate(trade.getCreatedDate());
-                existing.setExpired(trade.isExpired());
-                return existing;
-            }).orElse(trade);
-            
-            Trade savedTrade = tradeRepository.save(tradeToSave);
-            processedTradesCounter.increment();
-            logger.info("Successfully processed trade: {}", savedTrade.getTradeId());
-            return savedTrade;
-        } catch (OptimisticLockingFailureException e) {
-            rejectedTradesCounter.increment();
-            logger.error("Optimistic locking failed for trade {}: {}", trade.getTradeId(), e.getMessage());
-            throw new VersionConflictException("Trade was modified by another transaction. Please retry.", e);
-        } catch (VersionConflictException e) {
-            rejectedTradesCounter.increment();
-            logger.error("Version conflict for trade {}: {}", trade.getTradeId(), e.getMessage());
-            throw e;
-        }
+        return transactionTemplate.execute(status -> {
+            try {
+                validateVersion(trade);
+                validateMaturityDate(trade);
+                
+                // Check if trade exists and update it instead of creating new one
+                Optional<Trade> existingTradeOpt = tradeRepository.findById(trade.getTradeId());
+                Trade tradeToSave = existingTradeOpt.map(existing -> {
+                    // Update existing trade with new values
+                    existing.setVersion(trade.getVersion());
+                    existing.setCounterPartyId(trade.getCounterPartyId());
+                    existing.setBookId(trade.getBookId());
+                    existing.setMaturityDate(trade.getMaturityDate());
+                    existing.setCreatedDate(trade.getCreatedDate());
+                    existing.setExpired(trade.isExpired());
+                    return existing;
+                }).orElse(trade);
+                
+                Trade savedTrade = tradeRepository.save(tradeToSave);
+                tradeRepository.flush(); // Force immediate database write
+                logger.info("Trade saved to database: {}", savedTrade.getTradeId());
+                logger.info("Trade persistence completed successfully");
+                processedTradesCounter.increment();
+                logger.info("Successfully processed trade: {}", savedTrade.getTradeId());
+                return savedTrade;
+            } catch (OptimisticLockingFailureException e) {
+                rejectedTradesCounter.increment();
+                logger.error("Optimistic locking failed for trade {}: {}", trade.getTradeId(), e.getMessage());
+                status.setRollbackOnly();
+                throw new VersionConflictException("Trade was modified by another transaction. Please retry.", e);
+            } catch (VersionConflictException e) {
+                rejectedTradesCounter.increment();
+                logger.error("Version conflict for trade {}: {}", trade.getTradeId(), e.getMessage());
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
     }
 
 

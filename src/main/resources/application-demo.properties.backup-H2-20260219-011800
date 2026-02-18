@@ -1,16 +1,16 @@
 # Demo Profile Configuration
 spring.profiles.active=demo
 
-# PostgreSQL Database Configuration for Demo
-spring.datasource.url=jdbc:postgresql://localhost:5432/tradestore_demo
-spring.datasource.driver-class-name=org.postgresql.Driver
-spring.datasource.username=${DEMO_DB_USERNAME:user}
-spring.datasource.password=${DEMO_DB_PASSWORD:password}
+# H2 Database Configuration for Demo
+spring.datasource.url=jdbc:h2:mem:tradestore_demo;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=${DEMO_DB_USERNAME:sa}
+spring.datasource.password=${DEMO_DB_PASSWORD:}
 
-# JPA/Hibernate Configuration for PostgreSQL
-spring.jpa.hibernate.ddl-auto=update
+# JPA/Hibernate Configuration
+spring.jpa.hibernate.ddl-auto=create-drop
 spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect
 spring.jpa.properties.hibernate.format_sql=true
 spring.jpa.defer-datasource-initialization=true
 
@@ -29,5 +29,6 @@ logging.pattern.console=%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
 # Enable scheduling for expiry demo
 spring.task.scheduling.pool.size=2
 
-# PostgreSQL Console (disabled for PostgreSQL)
-spring.h2.console.enabled=false
+# H2 Console (for debugging)
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console

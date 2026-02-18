@@ -17,7 +17,7 @@ public class TradeId implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @Column(name = "trade_id", columnDefinition = "BINARY(16)")
+    @Column(name = "trade_id", columnDefinition = "UUID")
     private UUID value;
 
     // Default constructor for JPA

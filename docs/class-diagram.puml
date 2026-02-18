@@ -1,26 +1,53 @@
 @startuml Trade Store Service Class Diagram
 
-title Trade Store Service - Domain Model
+title Trade Store Service - Updated Domain Model
+
+package com.tradestore.domain.valueobject {
+    class TradeId {
+        - UUID value
+        --
+        + TradeId(UUID value)
+        + generate(): TradeId
+        + from(String uuidString): TradeId
+        + getValue(): UUID
+        + equals(Object o): boolean
+        + hashCode(): int
+        + toString(): String
+    }
+    
+    class CounterPartyId {
+        - String value
+        --
+        + CounterPartyId(String value)
+        + from(String value): CounterPartyId
+        + getValue(): String
+        + equals(Object o): boolean
+        + hashCode(): int
+        + toString(): String
+    }
+}
 
 package com.tradestore.entity {
     class Trade {
-        - UUID tradeId
+        - TradeId tradeId
         - Integer version
-        - String counterPartyId
+        - Long jpaVersion
+        - CounterPartyId counterPartyId
         - String bookId
         - LocalDate maturityDate
         - LocalDate createdDate
-        - String expired
+        - boolean expired
         - LocalDate timestamp
         - LocalDate lastUpdated
         --
         + Trade()
         + Trade(tradeId, version, counterPartyId, bookId, maturityDate, createdDate, expired)
-        + getTradeId(): UUID
+        + validateMaturityDatePublic(): void
+        + getTradeId(): TradeId
         + setTradeId(tradeId): void
         + getVersion(): Integer
         + setVersion(version): void
-        + getCounterPartyId(): String
+        + getCounterPartyId(): CounterPartyId
         + setCounterPartyId(counterPartyId): void
         + getBookId(): String
         + setBookId(bookId): void
@@ -28,7 +55,7 @@ package com.tradestore.entity {
         + setMaturityDate(maturityDate): void
         + getCreatedDate(): LocalDate
         + setCreatedDate(createdDate): void
-        + getExpired(): String
+        + isExpired(): boolean
         + setExpired(expired): void
         + toString(): String
     }
@@ -106,8 +133,9 @@ package com.tradestore.repository {
         + findById(tradeId): Optional<Trade>
         + save(trade): Trade
         + findAll(): List<Trade>
-        + findByMaturityDateBeforeAndExpired(currentDate, expiredFlag): List<Trade>
-        + existsByTradeId(tradeId): boolean
+        + findTradesToExpireBatch(currentDate, pageable): List<Trade>
+        + findByCounterPartyId(counterPartyId, pageable): Page<Trade>
+        + countByExpired(expired): long
     }
     
     interface AuditMessageRepository {
@@ -121,12 +149,36 @@ package com.tradestore.repository {
 package com.tradestore.service {
     class TradeService {
         - TradeRepository tradeRepository
+        - Counter rejectedTradesCounter
+        - Counter processedTradesCounter
+        - Counter expiredTradesCounter
         - Logger logger
         --
         + processTrade(trade): Trade
         + markExpiredTrades(): void
         + getTrade(tradeId): Optional<Trade>
         + getAllTrades(): List<Trade>
+        + deleteTrade(tradeId): void
+        --
+        - validateMaturityDate(trade): void
+        - validateVersion(trade): void
+    }
+    
+    class TradeServiceOptimized {
+        - TradeRepository tradeRepository
+        - Logger logger
+        - static final int BATCH_SIZE
+        - static final Executor asyncExecutor
+        --
+        + processTrade(trade): Trade
+        + processTradesInBulk(trades): List<Trade>
+        + getTradesPaginated(page, size, sortBy, sortDir): Page<Trade>
+        + getTradesByCounterParty(counterPartyId, page, size): Page<Trade>
+        + markExpiredTradesOptimized(): void
+        + markExpiredTradesAsync(): void
+        + getTrade(tradeId): Optional<Trade>
+        + getTradeCount(): long
+        + getTradeCountByExpiry(expired): long
         --
         - validateMaturityDate(trade): void
         - validateVersion(trade): void
@@ -144,10 +196,60 @@ package com.tradestore.service {
     }
 }
 
+package com.tradestore.controller {
+    class TradeController {
+        - TradeService tradeService
+        - Logger logger
+        --
+        + getAllTrades(): ResponseEntity<List<Trade>>
+        + getTrade(tradeId): ResponseEntity<Trade>
+        + createTrade(trade): ResponseEntity<Trade>
+        + updateTrade(tradeId, trade): ResponseEntity<Trade>
+        + deleteTrade(tradeId): ResponseEntity<Void>
+    }
+    
+    class TradeControllerOptimized {
+        - TradeServiceOptimized tradeService
+        - Logger logger
+        --
+        + getTradesPaginated(page, size, sortBy, sortDir): ResponseEntity<Page<Trade>>
+        + getTradesByCounterParty(counterPartyId, page, size): ResponseEntity<Page<Trade>>
+        + getActiveTrades(page, size): ResponseEntity<Page<Trade>>
+        + getTrade(tradeId): ResponseEntity<Trade>
+        + createTrade(trade): ResponseEntity<Trade>
+        + createTradesInBulk(trades): ResponseEntity<List<Trade>>
+        + updateTrade(tradeId, trade): ResponseEntity<Trade>
+        + getTradeStats(): ResponseEntity<TradeStats>
+        + health(): ResponseEntity<String>
+    }
+    
+    class TradeStats {
+        - long totalTrades
+        - long activeTrades
+        - long expiredTrades
+        --
+        + TradeStats(totalTrades, activeTrades, expiredTrades)
+    }
+}
+
 package com.tradestore.exception {
     class InvalidTradeException {
         + InvalidTradeException(message)
         + InvalidTradeException(message, cause)
+    }
+    
+    class VersionConflictException {
+        + VersionConflictException(message)
+        + VersionConflictException(message, cause)
+    }
+    
+    class GlobalExceptionHandler {
+        + handleInvalidTradeException(ex, request): ResponseEntity<Object>
+        + handleVersionConflictException(ex, request): ResponseEntity<Object>
+        + handleIllegalArgumentException(ex, request): ResponseEntity<Object>
+        + handleGlobalException(ex, request): ResponseEntity<Object>
+        --
+        - createProblemDetails(status, title, detail, type, instance): Map<String, Object>
     }
 }
 
@@ -168,21 +270,54 @@ package com.tradestore.config {
 
 ' Relationships
 TradeMessage ..> Trade : "JSON mapping"
+Trade --> TradeId : "has"
+Trade --> CounterPartyId : "has"
 TradeService --> TradeRepository : "uses"
 TradeService --> Trade : "processes"
+TradeService --> InvalidTradeException : "throws"
+TradeService --> VersionConflictException : "throws"
+
+TradeServiceOptimized --> TradeRepository : "uses"
+TradeServiceOptimized --> Trade : "processes"
+TradeServiceOptimized --> InvalidTradeException : "throws"
+
+TradeController --> TradeService : "uses"
+TradeController --> GlobalExceptionHandler : "handled by"
+
+TradeControllerOptimized --> TradeServiceOptimized : "uses"
+TradeControllerOptimized --> TradeStats : "returns"
+TradeControllerOptimized --> GlobalExceptionHandler : "handled by"
+
 KafkaTradeConsumer --> TradeService : "delegates to"
 KafkaTradeConsumer --> AuditMessageRepository : "uses"
 KafkaTradeConsumer --> TradeMessage : "consumes"
 KafkaTradeConsumer --> AuditMessage : "creates"
 TradeRepository --> Trade : "manages"
 AuditMessageRepository --> AuditMessage : "manages"
-TradeService --> InvalidTradeException : "throws"
+GlobalExceptionHandler --> InvalidTradeException : "handles"
+GlobalExceptionHandler --> VersionConflictException : "handles"
 
 ' JPA Annotations
 note top of Trade
   @Entity
-  @Table(name = "trades")
+  @Table(name = "trades", indexes = {
+    @Index(name = "idx_trade_id", columnList = "trade_id"),
+    @Index(name = "idx_maturity_date", columnList = "maturity_date"),
+    @Index(name = "idx_expired", columnList = "expired"),
+    @Index(name = "idx_counter_party", columnList = "counter_party_id"),
+    @Index(name = "idx_book_id", columnList = "book_id")
+  })
   @EntityListeners(AuditingEntityListener.class)
+end note
+
+note top of TradeId
+  @Embeddable
+  @Column(name = "trade_id", columnDefinition = "BINARY(16)")
+end note
+
+note top of CounterPartyId
+  @Embeddable
+  @Column(name = "counter_party_id", nullable = false, length = 50)
 end note
 
 note top of AuditMessage
@@ -192,7 +327,7 @@ end note
 ' Spring Annotations
 note top of TradeRepository
   @Repository
-  extends JpaRepository<Trade, UUID>
+  extends JpaRepository<Trade, TradeId>
 end note
 
 note top of AuditMessageRepository
@@ -206,9 +341,32 @@ note top of TradeService
   @Scheduled(cron = "0 0 0 * * *")
 end note
 
+note top of TradeServiceOptimized
+  @Service
+  @Transactional
+  @Validated
+  @Scheduled(cron = "0 0 0 * * *")
+  @Scheduled(cron = "0 30 0 * * *")
+end note
+
+note top of TradeController
+  @RestController
+  @RequestMapping("/api/trades")
+end note
+
+note top of TradeControllerOptimized
+  @RestController
+  @RequestMapping("/api/v2/trades")
+  @Validated
+end note
+
 note top of KafkaTradeConsumer
   @Service
   @KafkaListener(topics = "tradestore")
+end note
+
+note top of GlobalExceptionHandler
+  @ControllerAdvice
 end note
 
 @enduml
