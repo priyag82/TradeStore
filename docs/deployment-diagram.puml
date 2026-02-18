@@ -27,7 +27,7 @@ CLOUD "Production Environment" as ProdEnv {
 CLOUD "Development Environment" as DevEnv {
     rectangle "Trade Store Dev\nSpring Boot\nPort: 8080" as App_Dev
     
-    database "H2 Database\nIn-Memory\nPort: 9092" as H2_Dev
+    database "PostgreSQL\nDocker Container\nPort: 5432" as PG_Dev
     
     database "MongoDB\nSingle Instance\nPort: 27017" as Mongo_Dev
     
@@ -77,7 +77,7 @@ Grafana_Prod --> Prometheus_Prod : Query Metrics
 
 ' Connections in Development
 Clients --> App_Dev : HTTP
-App_Dev --> H2_Dev : JDBC
+App_Dev --> PG_Dev : JDBC
 App_Dev --> Mongo_Dev : MongoDB Driver
 App_Dev --> Kafka_Dev : Kafka Producer/Consumer
 
@@ -98,9 +98,10 @@ end note
 
 note top of App_Dev
   - Spring Profiles: dev
-  - H2 Console: /h2-console
+  - PostgreSQL Database
   - Debug Mode Enabled
   - Hot Reload
+  - Docker Compose Setup
 end note
 
 note right of PG_Prod
@@ -108,6 +109,14 @@ note right of PG_Prod
   - Backups Daily
   - SSL/TLS Enabled
   - Read Replicas
+end note
+
+note right of PG_Dev
+  - Docker Container
+  - Port: 5432
+  - User: user
+  - Database: tradestore_dev
+  - UTC Timezone
 end note
 
 note right of Kafka_Prod
